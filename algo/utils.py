@@ -28,4 +28,5 @@ def compute_front_end_measures(sliding_window):
         front_mean = np.mean(front_window)
         front_std = np.std(front_window)
         end_mean = np.mean(end_window)
-    return front_mean, front_std, end_mean
+        return front_mean, front_std, end_mean
+    return 0, 0, 0
