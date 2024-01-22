@@ -12,10 +12,10 @@ def todatetime(timestamp):
         return pd.to_datetime(timestamp)
     
 def update_sliding_window(sliding_window, new_value, current_timestamp):
+    sliding_window.append({"timestamp": current_timestamp, "value": new_value})
     first_entry_timestamp = sliding_window[0]["timestamp"]
     if current_timestamp - first_entry_timestamp > pd.Timedelta(1,"h"):
         del sliding_window[0]
-    sliding_window.append({"timestamp": current_timestamp, "value": new_value})
     return sliding_window
 
 def compute_front_end_measures(sliding_window):
