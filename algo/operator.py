@@ -30,10 +30,10 @@ class Operator(util.OperatorBase):
         self.unsusual_drop_detections = []
         self.unsusual_drop_detections_path = f"{data_path}/unusual_drop_detections.pickle"
     
-    def run(self, data, selector='energy_func'):
-        current_timestamp = utils.todatetime(data['Energy_Time']).tz_localize(None)
-        new_value = float(data['Energy_Consumption'])
-        print('energy: '+str(new_value)+'  '+'time: '+str(current_timestamp))
+    def run(self, data):
+        current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(None)
+        new_value = float(data['Humidity'])
+        print('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
         front_mean, front_std, end_mean = utils.compute_front_end_measures(self.sliding_window)
         if front_mean < end_mean - 2*front_std:
