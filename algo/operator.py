@@ -30,7 +30,7 @@ class Operator(util.OperatorBase):
         self.unsusual_drop_detections = []
         self.unsusual_drop_detections_path = f"{data_path}/unusual_drop_detections.pickle"
     
-    def run(self, data):
+    def run(self, data, selector = None):
         current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(None)
         new_value = float(data['Humidity'])
         print('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
