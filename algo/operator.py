@@ -38,7 +38,7 @@ class Operator(util.OperatorBase):
         front_mean, front_std, end_mean = utils.compute_front_end_measures(self.sliding_window)
         if front_mean < end_mean - 2*front_std:
             self.unsusual_drop_detections.append(current_timestamp)
-            with open(self.unsusual_drop_detections_path) as f:
+            with open(self.unsusual_drop_detections_path, "wb") as f:
                 pickle.dump(self.unsusual_drop_detections, f)
             print("Unusual humidity drop!")
 
