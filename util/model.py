@@ -32,6 +32,7 @@ class Selector(simple_struct.Structure):
 
 class Config(simple_struct.Structure):
     data_path = "/opt/data"
+    selectors: typing.List[Selector] = None
     logger_level = "warning"
 
     def __init__(self, d, **kwargs):
