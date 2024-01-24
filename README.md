@@ -1,4 +1,4 @@
-# Excessive Consumption
+# Open Window Detection
 
 ## Config options
 <!---
