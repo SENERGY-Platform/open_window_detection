@@ -29,6 +29,10 @@ class Operator(util.OperatorBase):
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
         self.unsusual_drop_detections = []
         self.unsusual_drop_detections_path = f"{data_path}/unusual_drop_detections.pickle"
+
+        if os.path.exists(self.unsusual_drop_detections_path):
+            with open(self.unsusual_drop_detections_path, "rb") as f:
+                self.unsusual_drop_detections = pickle.load(f)
     
     def run(self, data, selector = None):
         current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(None)
