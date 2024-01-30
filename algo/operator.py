@@ -36,7 +36,11 @@ class Operator(util.OperatorBase):
 
         self.window_open = False
         self.window_closing_times = []
-        self.window_closing_times_path = f"{data_path}/window_closing_times.pickle"     
+        self.window_closing_times_path = f"{data_path}/window_closing_times.pickle" 
+
+        if os.path.exists(self.window_closing_times_path):
+            with open(self.window_closing_times_path, "rb") as f:
+                self.window_closing_times = pickle.load(f)
     
     def run(self, data, selector = None):
         current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(None)
