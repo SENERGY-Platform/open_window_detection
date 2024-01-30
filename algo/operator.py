@@ -34,7 +34,9 @@ class Operator(util.OperatorBase):
             with open(self.unsusual_drop_detections_path, "rb") as f:
                 self.unsusual_drop_detections = pickle.load(f)
 
-        
+        self.window_open = False
+        self.window_closing_times = []
+        self.window_closing_times_path = f"{data_path}/window_closing_times.pickle"     
     
     def run(self, data, selector = None):
         current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(None)
@@ -48,5 +50,11 @@ class Operator(util.OperatorBase):
             with open(self.unsusual_drop_detections_path, "wb") as f:
                 pickle.dump(self.unsusual_drop_detections, f)
             print("Unusual humidity drop!")
-
-
+            self.window_open = True
+        else:
+            if self.window_open:
+                self.window_open = False
+                self.window_closing_times.append(data['Humidity_Time'])
+                with open(self.window_closing_times_path, "wb") as f:
+                    pickle.dump(self.window_closing_times, f)
+                print("Window closed!")
