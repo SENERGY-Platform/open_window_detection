@@ -43,7 +43,7 @@ class Operator(util.OperatorBase):
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
         sampled_sliding_window = utils.minute_resampling(sampled_sliding_window)
         front_mean, front_std, end_mean = utils.compute_front_end_measures(self.sliding_window)
-        if end_mean < front_mean - 3*front_std:
+        if end_mean < front_mean - 2*front_std and front_mean - end_mean > 2 and self.sliding_window[-1]["value"] < self.sliding_window[-2]["value"]:
             self.unsusual_drop_detections.append(current_timestamp)
             with open(self.unsusual_drop_detections_path, "wb") as f:
                 pickle.dump(self.unsusual_drop_detections, f)
