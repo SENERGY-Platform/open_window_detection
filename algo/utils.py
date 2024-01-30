@@ -14,7 +14,7 @@ def todatetime(timestamp):
 def update_sliding_window(sliding_window, new_value, current_timestamp):
     sliding_window.append({"timestamp": current_timestamp, "value": new_value})
     first_entry_timestamp = sliding_window[0]["timestamp"]
-    if current_timestamp - first_entry_timestamp > pd.Timedelta(2,"h"):
+    if current_timestamp - first_entry_timestamp > pd.Timedelta(3,"h"):
         del sliding_window[0]
     return sliding_window
 
@@ -30,3 +30,13 @@ def compute_front_end_measures(sliding_window):
         end_mean = np.mean(end_window)
         return front_mean, front_std, end_mean
     return 0, 0, 0
+
+def minute_resampling(sliding_window):
+    if len(sliding_window) > 1:
+        data_series = pd.DataFrame(sliding_window).set_index("timestamp")
+        data_series = data_series[~data_series.index.duplicated(keep='first')]
+        resampled_data_series = data_series.resample('s').interpolate().resample('T').asfreq().dropna()
+        resampled_data_series = resampled_data_series.loc[resampled_data_series.index[-1] - pd.Timedelta(180,'min'):] #!!
+        resampled_sliding_window = resampled_data_series.reset_index().to_dict('records')
+        return resampled_sliding_window
+    return sliding_window
