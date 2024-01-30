@@ -58,3 +58,4 @@ class Operator(util.OperatorBase):
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 print("Window closed!")
+        return {"window_open": self.window_open, "timestamp": current_timestamp}
