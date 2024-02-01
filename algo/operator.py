@@ -56,7 +56,7 @@ class Operator(util.OperatorBase):
             print("Unusual humidity drop!")
             self.window_open = True
         else:
-            if self.window_open:
+            if self.window_open and self.sliding_window[-1]["value"] - self.sliding_window[-2]["value"] > 1:
                 self.window_open = False
                 self.window_closing_times.append(data['Humidity_Time'])
                 with open(self.window_closing_times_path, "wb") as f:
