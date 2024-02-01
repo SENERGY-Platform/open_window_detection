@@ -50,15 +50,15 @@ class Operator(util.OperatorBase):
         sampled_sliding_window = utils.minute_resampling(self.sliding_window)
         front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
         if end_mean < front_mean - 2*front_std and front_mean - end_mean > 2 and self.sliding_window[-1]["value"] < self.sliding_window[-2]["value"]:
-            self.unsusual_drop_detections.append(current_timestamp)
+            self.unsusual_drop_detections.append((current_timestamp, new_value))
             with open(self.unsusual_drop_detections_path, "wb") as f:
                 pickle.dump(self.unsusual_drop_detections, f)
             print("Unusual humidity drop!")
             self.window_open = True
         else:
-            if self.window_open and self.sliding_window[-1]["value"] - self.unsusual_drop_detections[-1] > 1:
+            if self.window_open and self.sliding_window[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
                 self.window_open = False
-                self.window_closing_times.append(data['Humidity_Time'])
+                self.window_closing_times.append((current_timestamp, new_value))
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 print("Window closed!")
