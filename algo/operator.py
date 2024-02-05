@@ -43,7 +43,7 @@ class Operator(util.OperatorBase):
                 self.window_closing_times = pickle.load(f)
     
     def run(self, data, selector = None):
-        current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(None)
+        current_timestamp = utils.todatetime(data['Humidity_Time'])
         new_value = float(data['Humidity'])
         print('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
