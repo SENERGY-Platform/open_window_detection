@@ -43,7 +43,7 @@ class Operator(util.OperatorBase):
                 self.window_closing_times = pickle.load(f)
     
     def run(self, data, selector = None):
-        current_timestamp = utils.todatetime(data['Humidity_Time'])
+        current_timestamp = utils.todatetime(data['Humidity_Time']).tz_convert(tz='UTC')
         new_value = float(data['Humidity'])
         print('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
@@ -62,4 +62,4 @@ class Operator(util.OperatorBase):
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 print("Window closed!")
-        return {"window_open": self.window_open, "timestamp": str(current_timestamp)}
+        return {"window_open": self.window_open, "timestamp": str(current_timestamp.tz_localize(None))+"Z"}
