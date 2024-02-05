@@ -70,7 +70,7 @@ class Operator(util.OperatorBase):
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 print("Window closed!")
-        if current_timestamp - self.first_data_time < pd.Timestamp(1,'h'):
+        if current_timestamp - self.first_data_time < pd.Timedelta(1,'h'):
             td_until_start = pd.Timestamp(1,'h') - (current_timestamp - self.first_data_time)
             minutes_until_start = int(td_until_start.total_seconds()/60)
             return {"window_open": self.window_open, 
