@@ -73,6 +73,7 @@ class Operator(util.OperatorBase):
         if current_timestamp - self.first_data_time < pd.Timestamp(1,'h'):
             td_until_start = pd.Timestamp(1,'h') - (current_timestamp - self.first_data_time)
             minutes_until_start = int(td_until_start.total_seconds()/60)
-            return {"window_open": f"Die Anwendung befindet sich noch für ca. {minutes_until_start} Minuten in der Initialisierungsphase", 
-                    "timestamp": str(current_timestamp.tz_localize(None))+"Z"}
-        return {"window_open": self.window_open, "timestamp": str(current_timestamp.tz_localize(None))+"Z"}
+            return {"window_open": self.window_open, 
+                    "timestamp": str(current_timestamp.tz_localize(None))+"Z",
+                    "inital_phase": f"Die Anwendung befindet sich noch für ca. {minutes_until_start} Minuten in der Initialisierungsphase"}
+        return {"window_open": self.window_open, "timestamp": str(current_timestamp.tz_localize(None))+"Z", "inital_phase": ""}
