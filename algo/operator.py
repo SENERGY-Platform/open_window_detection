@@ -75,5 +75,5 @@ class Operator(util.OperatorBase):
             minutes_until_start = int(td_until_start.total_seconds()/60)
             return {"window_open": self.window_open, 
                     "timestamp": str(current_timestamp.tz_localize(None))+"Z",
-                    "inital_phase": f"Die Anwendung befindet sich noch für ca. {minutes_until_start} Minuten in der Initialisierungsphase"}
-        return {"window_open": self.window_open, "timestamp": str(current_timestamp.tz_localize(None))+"Z", "inital_phase": ""}
+                    "initial_phase": f"Die Anwendung befindet sich noch für ca. {minutes_until_start} Minuten in der Initialisierungsphase"}
+        return {"window_open": self.window_open, "timestamp": str(current_timestamp.tz_localize(None))+"Z", "initial_phase": ""}
