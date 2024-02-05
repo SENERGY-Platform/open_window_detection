@@ -18,6 +18,7 @@ __all__ = ("Operator", )
 
 import util
 import os
+import pandas as pd
 from algo import utils
 import pickle
 
@@ -25,6 +26,8 @@ class Operator(util.OperatorBase):
     def __init__(self, data_path):
         if not os.path.exists(data_path):
             os.mkdir(data_path)
+
+        self.first_data_time = None
 
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
         self.unsusual_drop_detections = []
@@ -47,6 +50,8 @@ class Operator(util.OperatorBase):
             current_timestamp = utils.todatetime(data['Humidity_Time']).tz_convert(tz='UTC')
         except TypeError:
             current_timestamp = utils.todatetime(data['Humidity_Time']).tz_localize(tz='UTC')
+        if self.first_data_time == None:
+            self.first_data_time = current_timestamp
         new_value = float(data['Humidity'])
         print('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
@@ -65,4 +70,9 @@ class Operator(util.OperatorBase):
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 print("Window closed!")
+        if current_timestamp - self.first_data_time < pd.Timestamp(1,'h'):
+            td_until_start = pd.Timestamp(1,'h') - (current_timestamp - self.first_data_time)
+            minutes_until_start = int(td_until_start.total_seconds()/60)
+            return {"window_open": f"Die Anwendung befindet sich noch für ca. {minutes_until_start} Minuten in der Initialisierungsphase", 
+                    "timestamp": str(current_timestamp.tz_localize(None))+"Z"}
         return {"window_open": self.window_open, "timestamp": str(current_timestamp.tz_localize(None))+"Z"}
