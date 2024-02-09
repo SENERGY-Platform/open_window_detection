@@ -32,7 +32,9 @@ def compute_front_end_measures(sliding_window):
     return 0, 0, 0
 
 def minute_resampling(sliding_window):
-    if len(sliding_window) > 1:
+    first_entry_timestamp = sliding_window[0]["timestamp"]
+    last_entry_timestamp = sliding_window[-1]["timestamp"]
+    if last_entry_timestamp - first_entry_timestamp > pd.Timedelta(1, "min"):
         data_series = pd.DataFrame(sliding_window).set_index("timestamp")
         data_series = data_series[~data_series.index.duplicated(keep='first')]
         data_series.index = data_series.index.map(lambda x: x.round("S"))
