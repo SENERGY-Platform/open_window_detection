@@ -14,7 +14,7 @@ def todatetime(timestamp):
 def update_sliding_window(sliding_window, new_value, current_timestamp):
     sliding_window.append({"timestamp": current_timestamp, "value": new_value})
     first_entry_timestamp = sliding_window[0]["timestamp"]
-    if current_timestamp - first_entry_timestamp > pd.Timedelta(3,"h"):
+    if current_timestamp - first_entry_timestamp > pd.Timedelta(0.75,"h"):
         del sliding_window[0]
     return sliding_window
 
