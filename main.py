@@ -29,7 +29,7 @@ class CustomConfig(Config):
 class Operator(OperatorBase):
     configType = CustomConfig
     
-    def __init__(self, *args, **kwargs):
+    def init(self, *args, **kwargs):
         super().init(*args, **kwargs)
         data_path = self.config.data_path
         
