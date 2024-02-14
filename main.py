@@ -89,4 +89,4 @@ class Operator(OperatorBase):
     
 from operator_lib.operator_lib import OperatorLib
 if __name__ == "__main__":
-    OperatorLib(Operator(), name="leakage-detection-operator", git_info_file='git_commit')
+    OperatorLib(Operator(), name="open-window-detection-operator", git_info_file='git_commit')
