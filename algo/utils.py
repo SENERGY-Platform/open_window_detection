@@ -43,3 +43,9 @@ def minute_resampling(sliding_window):
         resampled_sliding_window = resampled_data_series.reset_index().to_dict('records')
         return resampled_sliding_window
     return sliding_window
+
+def compute_10min_slope(sampled_sliding_window):
+    last_10min_window = sampled_sliding_window[-10:]  # This simple slicing makes sense here because sampled_sliding_window has a frequency of 1/min
+    last_10min_values = [entry["value"] for entry in last_10min_window]
+    last_10min_slope = float(last_10min_values[-1] - last_10min_values[0]) # Note, that taking the differnece here suffices, because the considered x-range is always 10min (fixed!).
+    return last_10min_slope
