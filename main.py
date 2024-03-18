@@ -16,7 +16,7 @@
 
 __all__ = ("Operator", )
 
-from operator_lib.util import OperatorBase
+from operator_lib.util import OperatorBase, logger
 import os
 import pandas as pd
 from algo import utils
@@ -62,7 +62,7 @@ class Operator(OperatorBase):
         if self.first_data_time == None:
             self.first_data_time = current_timestamp
         new_value = float(data['Humidity'])
-        print('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
+        logger.debug('Humidity: '+str(new_value)+'  '+'Humidity Time: '+str(current_timestamp))
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
         sampled_sliding_window = utils.minute_resampling(self.sliding_window)
         front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
@@ -71,7 +71,7 @@ class Operator(OperatorBase):
                 self.unsusual_drop_detections.append((current_timestamp, new_value, utils.compute_10min_slope(sampled_sliding_window)))
                 with open(self.unsusual_drop_detections_path, "wb") as f:
                     pickle.dump(self.unsusual_drop_detections, f)
-                print("Unusual humidity drop!")
+                logger.info("Unusual humidity drop!")
                 self.window_open = True
         else:
             if self.window_open and self.sliding_window[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
@@ -79,7 +79,7 @@ class Operator(OperatorBase):
                 self.window_closing_times.append((current_timestamp, new_value))
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
-                print("Window closed!")
+                logger.info("Window closed!")
         if current_timestamp - self.first_data_time < pd.Timedelta(1,'h'):
             td_until_start = pd.Timedelta(1,'h') - (current_timestamp - self.first_data_time)
             minutes_until_start = int(td_until_start.total_seconds()/60)
