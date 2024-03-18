@@ -55,7 +55,7 @@ class Operator(OperatorBase):
             with open(self.window_closing_times_path, "rb") as f:
                 self.window_closing_times = pickle.load(f)
     
-    def run(self, data, selector = None):
+    def run(self, data, selector = None, topic=None):
         try:
             current_timestamp = utils.todatetime(data['Humidity_Time']).tz_convert(tz='UTC')
         except TypeError:
