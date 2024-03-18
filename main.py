@@ -25,6 +25,7 @@ import pickle
 from operator_lib.util import Config
 class CustomConfig(Config):
     data_path = "/opt/data"
+    logger_level = "info"
 
 class Operator(OperatorBase):
     configType = CustomConfig
