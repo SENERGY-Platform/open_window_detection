@@ -25,7 +25,19 @@ import pickle
 from operator_lib.util import Config
 class CustomConfig(Config):
     data_path = "/opt/data"
-    logger_level = "info"
+    init_phase_length: float = 2
+    init_phase_level: str = "d"
+
+    def __init__(self, d, **kwargs):
+        super().__init__(d, **kwargs)
+
+        if self.init_phase_length != '':
+            self.init_phase_length = float(self.init_phase_length)
+        else:
+            self.init_phase_length = 2
+        
+        if self.init_phase_level == '':
+            self.init_phase_level = 'd'
 
 class Operator(OperatorBase):
     configType = CustomConfig
@@ -54,6 +66,8 @@ class Operator(OperatorBase):
         if os.path.exists(self.window_closing_times_path):
             with open(self.window_closing_times_path, "rb") as f:
                 self.window_closing_times = pickle.load(f)
+        
+        self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)
     
     def run(self, data, selector = None, topic=None):
         try:
@@ -81,8 +95,8 @@ class Operator(OperatorBase):
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 logger.info("Window closed!")
-        if current_timestamp - self.first_data_time < pd.Timedelta(1,'h'):
-            td_until_start = pd.Timedelta(1,'h') - (current_timestamp - self.first_data_time)
+        if current_timestamp - self.first_data_time < self.init_phase_duration:
+            td_until_start = self.init_phase_duration - (current_timestamp - self.first_data_time)
             minutes_until_start = int(td_until_start.total_seconds()/60)
             return {"window_open": self.window_open, 
                     "timestamp": str(current_timestamp.tz_localize(None))+"Z",
