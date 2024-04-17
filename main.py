@@ -69,7 +69,7 @@ class Operator(OperatorBase):
         
         self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)
     
-    def run(self, data, selector = None, topic=None):
+    def run(self, data, selector = None, device_id=None):
         try:
             current_timestamp = utils.todatetime(data['Humidity_Time']).tz_convert(tz='UTC')
         except TypeError:
@@ -96,6 +96,7 @@ class Operator(OperatorBase):
                     pickle.dump(self.window_closing_times, f)
                 logger.info("Window closed!")
         if current_timestamp - self.first_data_time < self.init_phase_duration:
+            logger.debug(f"{current_timestamp} - {self.first_data_time} < {self.init_phase_duration}")
             td_until_start = self.init_phase_duration - (current_timestamp - self.first_data_time)
             minutes_until_start = int(td_until_start.total_seconds()/60)
             return {"window_open": self.window_open, 
