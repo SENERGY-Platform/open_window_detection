@@ -11,3 +11,4 @@ similaritymeasures
 pyarrow
 scikit-learn
 kneed[plot]
+python-dotenv
