@@ -81,7 +81,7 @@ class Operator(OperatorBase):
         }
         if self.init_phase_handler.first_init_msg_needs_to_send():
             init_msg = self.init_phase_handler.generate_first_init_msg(value)
-            #TODO send init_msg
+            self.produce(init_msg)
     
     def run(self, data, selector = None, device_id=None):
         current_timestamp = todatetime(data['Humidity_Time'])
