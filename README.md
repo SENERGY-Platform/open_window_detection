@@ -2,8 +2,8 @@
 Detects whether a window is open by checking for step and short drops in the air humidity curve.
 
 ## Input 
-| key                | type                                                 | description                                               | 
-|--------------------|------------------------------------------------------|-----------------------------------------------------------|----------|
+| key                | type | description | 
+|--------------------|------|-------------|
 |     |                                              |                      |     
 | `Humidity`     | float | Humidity value in percentage |
 | `Humidity_Time`     | string | Corresponding timestamp |
@@ -12,8 +12,8 @@ Detects whether a window is open by checking for step and short drops in the air
 
 ## Output 
 
-| key                | type                                                 | description                                               | 
-|--------------------|------------------------------------------------------|-----------------------------------------------------------|----------|
+| key | type | description | 
+|--------------------|-------------|-----------------------------------------------------------|
 |     |                                              |                      |     
 | `[DEVICE_ID]`     | JSON string `{window_open: bool, timestamp: string}` | Whether the window is detected as open or not |
 
