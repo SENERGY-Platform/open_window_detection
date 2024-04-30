@@ -1,19 +1,31 @@
 # Open Window Detection
+Detects whether a window is open by checking for step and short drops in the air humidity curve.
+
+## Input 
+| key                | type                                                 | description                                               | 
+|--------------------|------------------------------------------------------|-----------------------------------------------------------|----------|
+|     |                                              |                      |     
+| `Humidity`     | float | Humidity value in percentage |
+| `Humidity_Time`     | string | Corresponding timestamp |
+
+
+
+## Output 
+
+| key                | type                                                 | description                                               | 
+|--------------------|------------------------------------------------------|-----------------------------------------------------------|----------|
+|     |                                              |                      |     
+| `[DEVICE_ID]`     | JSON string `{window_open: bool, timestamp: string}` | Whether the window is detected as open or not |
+
 
 ## Config options
-<!---
+
 | key                | type                                                 | description                                               | required |
 |--------------------|------------------------------------------------------|-----------------------------------------------------------|----------|
 |     |                                              |                      |     |
-| `weather_src_id`   | string                                               | ID of source providing weather forecast data.             | yes      |
-| `logger_level`     | string                                               | `info`, `warning` (default), `error`, `critical`, `debug` | no       |
-| `selectors`        | array[object{"name": string, "args": array[string]}] | Define selectors to distinguish between data sources.     | no       |
-| `power_td`         | float                                                | Time difference between consecutive power values in min (default:0.17)   | no       |
-| `weather_dim`      | integer                                              |                                                           | no       |
-| `data_path`        | string                                               | Path to reward and model files. Default: "/opt/data"      | no       |
-| `buffer_len`       | integer                                              | Length of replay buffer (default: 48)                     | no       |
-| `p_1`              | integer                                              | Power for reward calculation if action==1  (default:1)    | no       |
-| `p_0`              | integer                                              | Power for reward calculation if action==0  (default:1)    | no       |
-| `history_modus`    | string                                               | `all`, `daylight` (default)                               | no       |
+| `logger_level`     | string | `info`, `warning` (default), `error`, `critical`, `debug` | no |
+| `data_path`     | string | Path to the mounted volume | no |
+| `init_phase_length`     | number | Length of the initialization/training phase (default: 2) | no |
+| `init_phase_level`     | string | Duration level of the initizalization phase (pandas timedelta string, e.g. `d` for days) | no |
 
--->
+
