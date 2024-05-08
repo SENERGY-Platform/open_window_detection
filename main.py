@@ -60,10 +60,10 @@ class Operator(OperatorBase):
         self.first_data_time = load(self.config.data_path, "first_data_time.pickle")
 
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
-        self.unsusual_drop_detections = load(f"{data_path}/{UNUSUAL_FILENAME}", [])
+        self.unsusual_drop_detections = load(data_path, UNUSUAL_FILENAME, [])
  
         self.window_open = False
-        self.window_closing_times = load(f"{data_path}/{WINDOW_FILENAME}", [])
+        self.window_closing_times = load(data_path, WINDOW_FILENAME, [])
 
         init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
         self.init_phase_handler = InitPhase(data_path, init_phase_duration, self.first_data_time)
