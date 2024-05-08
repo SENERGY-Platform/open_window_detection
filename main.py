@@ -65,8 +65,8 @@ class Operator(OperatorBase):
         self.window_open = False
         self.window_closing_times = load(data_path, WINDOW_FILENAME, [])
 
-        init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
-        self.init_phase_handler = InitPhase(data_path, init_phase_duration, self.first_data_time)
+        self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
+        self.init_phase_handler = InitPhase(data_path, self.init_phase_duration, self.first_data_time)
         value = {
             "window_open": False,
             "timestamp": ""
