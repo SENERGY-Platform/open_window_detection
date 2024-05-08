@@ -29,6 +29,7 @@ import pickle
 
 UNUSUAL_FILENAME = "unusual_drop_detections.pickle"
 WINDOW_FILENAME = "window_closing_times.pickle"
+FIRST_DATA_FILENAME = "first_data_time.pickle"
 
 from operator_lib.util import Config
 class CustomConfig(Config):
@@ -57,7 +58,7 @@ class Operator(OperatorBase):
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
 
-        self.first_data_time = load(self.config.data_path, "first_data_time.pickle")
+        self.first_data_time = load(self.config.data_path, FIRST_DATA_FILENAME)
 
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
         self.unsusual_drop_detections = load(self.data_path, UNUSUAL_FILENAME, [])
@@ -71,19 +72,19 @@ class Operator(OperatorBase):
             "window_open": False,
             "timestamp": ""
         }
-        if self.init_phase_handler.first_init_msg_needs_to_send():
-            init_msg = self.init_phase_handler.generate_first_init_msg(value)
-            self.produce(init_msg)
+        self.init_phase_handler.send_first_init_msg(value)    
         
     def stop(self):
         super().stop()
         save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
         save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
+        save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
     
     def run(self, data, selector = None, device_id=None):
         current_timestamp = todatetime(data['Humidity_Time'])
         if not self.first_data_time:
             self.first_data_time = current_timestamp
+            save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
             self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time)
 
         new_value = float(data['Humidity'])

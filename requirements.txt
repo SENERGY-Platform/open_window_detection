@@ -1,4 +1,4 @@
-git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v1.0.18
+git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v1.1.0
 
 confluent_kafka<2
 pandas<2
