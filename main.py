@@ -21,6 +21,7 @@ import dotenv
 dotenv.load_dotenv()
 
 from operator_lib.util import OperatorBase, logger, InitPhase, setup_operator_starttime, todatetime, timestamp_to_str
+from operator_lib.util.persistence import save, load
 import os
 import pandas as pd
 from algo import utils
@@ -53,7 +54,7 @@ class Operator(OperatorBase):
         if not os.path.exists(data_path):
             os.mkdir(data_path)
 
-        self.first_data_time = None
+        self.first_data_time = load(self.config.data_path, "first_data_time.pickle")
 
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
         self.unsusual_drop_detections = []
@@ -71,10 +72,8 @@ class Operator(OperatorBase):
             with open(self.window_closing_times_path, "rb") as f:
                 self.window_closing_times = pickle.load(f)
         
-        setup_operator_starttime(data_path)
-
         init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
-        self.init_phase_handler = InitPhase(data_path, init_phase_duration)
+        self.init_phase_handler = InitPhase(data_path, init_phase_duration, self.first_data_time)
         value = {
             "window_open": False,
             "timestamp": ""
@@ -85,19 +84,13 @@ class Operator(OperatorBase):
     
     def run(self, data, selector = None, device_id=None):
         current_timestamp = todatetime(data['Humidity_Time'])
+        if not self.first_data_time:
+            self.first_data_time = current_timestamp
+            self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time)
+
         new_value = float(data['Humidity'])
         logger.debug('Humidity: '+str(new_value)+'  '+'Humidity Time: '+ timestamp_to_str(current_timestamp))
 
-        value = {
-            "window_open": False,
-            "timestamp": ""
-        }
-        if self.init_phase_handler.operator_is_in_init_phase(current_timestamp):
-            return self.init_phase_handler.generate_init_msg(current_timestamp, value)
-        
-        if self.init_phase_handler.init_phase_needs_to_be_reset():
-            return self.init_phase_handler.reset_init_phase(value)
-        
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
         sampled_sliding_window = utils.minute_resampling(self.sliding_window)
         front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
@@ -115,6 +108,18 @@ class Operator(OperatorBase):
                 with open(self.window_closing_times_path, "wb") as f:
                     pickle.dump(self.window_closing_times, f)
                 logger.info("Window closed!")
+
+        init_value = {
+            "window_open": False,
+            "timestamp": ""
+        }
+        operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_timestamp)
+        if operator_is_init:
+            return self.init_phase_handler.generate_init_msg(current_timestamp, init_value)
+
+        if self.init_phase_handler.init_phase_needs_to_be_reset():
+            return self.init_phase_handler.reset_init_phase(init_value)
+        
         return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "initial_phase": ""}
     
 from operator_lib.operator_lib import OperatorLib
