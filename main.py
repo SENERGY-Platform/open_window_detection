@@ -52,21 +52,21 @@ class Operator(OperatorBase):
     
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)
-        data_path = self.config.data_path
+        self.data_path = self.config.data_path
         
-        if not os.path.exists(data_path):
-            os.mkdir(data_path)
+        if not os.path.exists(self.data_path):
+            os.mkdir(self.data_path)
 
         self.first_data_time = load(self.config.data_path, "first_data_time.pickle")
 
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
-        self.unsusual_drop_detections = load(data_path, UNUSUAL_FILENAME, [])
+        self.unsusual_drop_detections = load(self.data_path, UNUSUAL_FILENAME, [])
  
         self.window_open = False
-        self.window_closing_times = load(data_path, WINDOW_FILENAME, [])
+        self.window_closing_times = load(self.data_path, WINDOW_FILENAME, [])
 
         self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
-        self.init_phase_handler = InitPhase(data_path, self.init_phase_duration, self.first_data_time)
+        self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time)
         value = {
             "window_open": False,
             "timestamp": ""
@@ -95,16 +95,14 @@ class Operator(OperatorBase):
         if end_mean < front_mean - 2*front_std and front_mean - end_mean > 2 and self.sliding_window[-1]["value"] < self.sliding_window[-2]["value"]:
             if (self.window_open == False and utils.compute_10min_slope(sampled_sliding_window) < -1) or self.window_open == True:
                 self.unsusual_drop_detections.append((current_timestamp, new_value, utils.compute_10min_slope(sampled_sliding_window)))
-                with open(self.unsusual_drop_detections_path, "wb") as f:
-                    pickle.dump(self.unsusual_drop_detections, f)
+                save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
                 logger.info("Unusual humidity drop!")
                 self.window_open = True
         else:
             if self.window_open and self.sliding_window[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
                 self.window_open = False
                 self.window_closing_times.append((current_timestamp, new_value))
-                with open(self.window_closing_times_path, "wb") as f:
-                    pickle.dump(self.window_closing_times, f)
+                save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
                 logger.info("Window closed!")
 
         init_value = {
