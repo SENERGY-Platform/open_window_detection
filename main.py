@@ -67,7 +67,7 @@ class Operator(OperatorBase):
         self.window_closing_times = load(self.data_path, WINDOW_FILENAME, [])
 
         self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
-        self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time)
+        self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
         value = {
             "window_open": False,
             "timestamp": ""
@@ -85,7 +85,7 @@ class Operator(OperatorBase):
         if not self.first_data_time:
             self.first_data_time = current_timestamp
             save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
-            self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time)
+            self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time, self.produce)
 
         new_value = float(data['Humidity'])
         logger.debug('Humidity: '+str(new_value)+'  '+'Humidity Time: '+ timestamp_to_str(current_timestamp))
