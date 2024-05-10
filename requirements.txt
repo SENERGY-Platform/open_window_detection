@@ -1,4 +1,4 @@
-git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v0.0.8
+git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v1.1.0
 
 confluent_kafka<2
 pandas<2
@@ -6,9 +6,9 @@ kazoo<3
 astral
 pytz
 scipy
-sklearn
 tqdm
 similaritymeasures
 pyarrow
 scikit-learn
 kneed[plot]
+python-dotenv
