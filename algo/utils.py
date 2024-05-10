@@ -36,8 +36,8 @@ def minute_resampling(sliding_window):
     last_entry_timestamp = sliding_window[-1]["timestamp"]
     if last_entry_timestamp - first_entry_timestamp > pd.Timedelta(1, "min"):
         data_series = pd.DataFrame(sliding_window).set_index("timestamp")
-        data_series = data_series[~data_series.index.duplicated(keep='first')]
         data_series.index = data_series.index.map(lambda x: x.round("S"))
+        data_series = data_series[~data_series.index.duplicated(keep='first')]
         resampled_data_series = data_series.resample('s').interpolate().resample('T').asfreq().dropna()
         resampled_data_series = resampled_data_series.loc[resampled_data_series.index[-1] - pd.Timedelta(180,'min'):] #!!
         resampled_sliding_window = resampled_data_series.reset_index().to_dict('records')
