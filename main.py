@@ -70,7 +70,7 @@ class Operator(OperatorBase):
         self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
         value = {
             "window_open": False,
-            "timestamp": ""
+            "timestamp": timestamp_to_str(pd.Timestamp.now())
         }
         self.init_phase_handler.send_first_init_msg(value)    
         
@@ -108,7 +108,7 @@ class Operator(OperatorBase):
 
         init_value = {
             "window_open": False,
-            "timestamp": ""
+            "timestamp": timestamp_to_str(current_timestamp)
         }
         operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_timestamp)
         if operator_is_init:
