@@ -3,8 +3,7 @@ Detects whether a window is open by checking for step and short drops in the air
 
 ## Input 
 | key                | type | description | 
-|--------------------|------|-------------|
-|     |                                              |                      |     
+|--------------------|------|-------------|   
 | `Humidity`     | float | Humidity value in percentage |
 | `Humidity_Time`     | string | Corresponding timestamp |
 
