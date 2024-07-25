@@ -26,10 +26,13 @@ import os
 import pandas as pd
 from algo import utils
 import pickle
+import numpy as np
 
 UNUSUAL_FILENAME = "unusual_drop_detections.pickle"
 WINDOW_FILENAME = "window_closing_times.pickle"
 FIRST_DATA_FILENAME = "first_data_time.pickle"
+TOO_FAST_TOO_HIGH_HUMID_FILENAME = "too_fast_too_high_humid.pickle"
+LAST_CLOSING_TIME_FILENAME = "last_closing_time.pickle"
 
 from operator_lib.util import Config
 class CustomConfig(Config):
@@ -57,6 +60,11 @@ class Operator(OperatorBase):
         
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
+
+        self.too_fast_high_humid_detected = False
+        self.too_fast_humid_risings = load(self.config.data_path, TOO_FAST_TOO_HIGH_HUMID_FILENAME, [])
+
+        self.last_closing_time = load(self.config.data_path, LAST_CLOSING_TIME_FILENAME, False)
 
         self.first_data_time = load(self.config.data_path, FIRST_DATA_FILENAME)
 
@@ -108,9 +116,20 @@ class Operator(OperatorBase):
                 save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
                 logger.info("Window closed!")
 
+        if self.window_open == False and self.last_closing_time != False and current_timestamp - self.last_closing_time <= pd.Timedelta(30, "min"):
+            time_window_since_last_closing = [entry["value"] for entry in sampled_sliding_window if entry["timestamp"] >= self.last_closing_time]
+            if np.mean(time_window_since_last_closing) >= 65 and self.too_fast_high_humid_detected == False:
+                self.too_fast_humid_risings.append(data['Humidity_Time'])
+                save(self.data_path, TOO_FAST_TOO_HIGH_HUMID_FILENAME, self.too_fast_humid_risings)
+                logger.info("Humidity too fast too high after closing the window!")
+                self.too_fast_high_humid_detected = True
+        elif self.window_open == False and self.last_closing_time != False and current_timestamp - self.last_closing_time > pd.Timedelta(30, "min"):
+            self.too_fast_high_humid_detected = False
+
         init_value = {
             "window_open": False,
-            "timestamp": timestamp_to_str(current_timestamp)
+            "timestamp": timestamp_to_str(current_timestamp),
+            "humidity_too_fast_too_high": ""
         }
         operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_timestamp)
         if operator_is_init:
@@ -119,7 +138,12 @@ class Operator(OperatorBase):
         if self.init_phase_handler.init_phase_needs_to_be_reset():
             return self.init_phase_handler.reset_init_phase(init_value)
         
-        return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "initial_phase": ""}
+        if self.too_fast_high_humid_detected:
+            return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
+                    "initial_phase": ""}
+        else:
+            return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": "", 
+                    "initial_phase": ""}
     
 from operator_lib.operator_lib import OperatorLib
 if __name__ == "__main__":
