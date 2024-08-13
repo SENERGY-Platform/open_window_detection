@@ -133,15 +133,21 @@ class Operator(OperatorBase):
         }
         operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_timestamp)
         if operator_is_init:
+            logger.debug(self.init_phase_handler.generate_init_msg(current_timestamp, init_value))
             return self.init_phase_handler.generate_init_msg(current_timestamp, init_value)
 
         if self.init_phase_handler.init_phase_needs_to_be_reset():
+            logger.debug(self.init_phase_handler.reset_init_phase(init_value))
             return self.init_phase_handler.reset_init_phase(init_value)
         
         if self.too_fast_high_humid_detected:
+            logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
+                    "initial_phase": ""})
             return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
                     "initial_phase": ""}
         else:
+            logger.debug(logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
+                    "initial_phase": ""}))
             return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": "", 
                     "initial_phase": ""}
     
