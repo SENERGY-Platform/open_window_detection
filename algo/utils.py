@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pandas as pd
 import numpy as np
 
@@ -49,3 +51,8 @@ def compute_10min_slope(sampled_sliding_window):
     last_10min_values = [entry["value"] for entry in last_10min_window]
     last_10min_slope = float(last_10min_values[-1] - last_10min_values[0]) # Note, that taking the differnece here suffices, because the considered x-range is always 10min (fixed!).
     return last_10min_slope
+
+def is_summer(date:datetime):
+    sum_start = 4
+    sum_end = 9
+    return sum_start<=date.month<=sum_end

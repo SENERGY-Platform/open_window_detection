@@ -16,7 +16,8 @@
 
 __all__ = ("Operator", )
 
- 
+from datetime import datetime
+from shutil import Error
 import dotenv
 dotenv.load_dotenv()
 
@@ -29,6 +30,8 @@ import pickle
 import numpy as np
 
 UNUSUAL_FILENAME = "unusual_drop_detections.pickle"
+UNUSUAL_2WEEKS_FILENAME = "unusual_2weeks_drop_detections.pickle"
+POINTCOUNT_FILENAME = "point_count_2weeks.pickle"
 WINDOW_FILENAME = "window_closing_times.pickle"
 FIRST_DATA_FILENAME = "first_data_time.pickle"
 TOO_FAST_TOO_HIGH_HUMID_FILENAME = "too_fast_too_high_humid.pickle"
@@ -53,11 +56,25 @@ class CustomConfig(Config):
 
 class Operator(OperatorBase):
     configType = CustomConfig
-    
+
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)
         self.data_path = self.config.data_path
-        
+
+        self.current_day: datetime = None
+        self.day_measurements = []
+        self.day_count = 0
+        self.day_vals_last2weeks = {
+            'mean': [],
+            'std': [],
+            'point_count': []
+        }
+
+        self.mean_2week = None
+        self.std_2week = None
+        self.mean_count_per_day = None
+        self.std_count_per_day = None
+
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
 
@@ -70,6 +87,8 @@ class Operator(OperatorBase):
 
         self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
         self.unsusual_drop_detections = load(self.data_path, UNUSUAL_FILENAME, [])
+        self.unsusual_2week_detections = load(self.data_path, UNUSUAL_2WEEKS_FILENAME, [])
+        self.dismissed_point_counts = load(self.data_path, POINTCOUNT_FILENAME, [])
  
         self.window_open = False
         self.window_closing_times = load(self.data_path, WINDOW_FILENAME, [])
@@ -87,6 +106,8 @@ class Operator(OperatorBase):
         save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
         save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
         save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
+        save(self.data_path, UNUSUAL_2WEEKS_FILENAME, self.unsusual_2week_detections)
+        save(self.data_path, POINTCOUNT_FILENAME, self.dismissed_point_counts)
     
     def run(self, data, selector = None, device_id=None):
         current_timestamp = todatetime(data['Humidity_Time'])
@@ -98,13 +119,12 @@ class Operator(OperatorBase):
         new_value = float(data['Humidity'])
         logger.debug('Humidity: '+str(new_value)+'  '+'Humidity Time: '+ timestamp_to_str(current_timestamp))
 
+        self.update_2week_stats(current_timestamp, new_value)
         self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
         sampled_sliding_window = utils.minute_resampling(self.sliding_window)
         front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
-        if end_mean < front_mean - 2*front_std and front_mean - end_mean > 2 and self.sliding_window[-1]["value"] < self.sliding_window[-2]["value"]:
-            if (self.window_open == False and utils.compute_10min_slope(sampled_sliding_window) < -1) or self.window_open == True or (
-            len(self.sliding_window) >= 2 and self.sliding_window[-2]["value"] - self.sliding_window[-1]["value"] > 5
-        ):
+
+        if self.unusual_drop_detected(new_value, current_timestamp, front_mean, front_std, end_mean, sampled_sliding_window):
                 self.unsusual_drop_detections.append((current_timestamp, new_value, utils.compute_10min_slope(sampled_sliding_window)))
                 save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
                 logger.info("Unusual humidity drop!")
@@ -150,7 +170,97 @@ class Operator(OperatorBase):
                     "initial_phase": ""}))
             return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": "", 
                     "initial_phase": ""}
-    
+
+    def unusual_drop_detected(self, current_value, current_timestamp, front_mean, front_std, end_mean, sampled_sliding_window) -> bool:
+        if (self.is_falling_unusually(front_mean, front_std, end_mean)) and (
+                (self.window_open == True) or # already open
+                (self.is_falling_last10min()) or
+                (self.is_falling_extreme_last2min())):
+            return True
+        elif self.mean_2week and self.is_outlier_2week_mean(current_value):
+            self.unsusual_2week_detections.append(
+                (current_timestamp, current_value, self.mean_2week, self.std_2week, utils.compute_10min_slope(sampled_sliding_window)))
+            return True
+        return False
+
+    def is_falling_unusually(self, front_mean, front_std, end_mean) -> bool:
+        falling = (end_mean < front_mean - 2 * front_std and front_mean - end_mean > 2 and
+                   self.sliding_window[-1]["value"] < self.sliding_window[-2]["value"])
+        return falling
+
+    def is_falling_last10min(self) -> bool:
+        falling = (self.window_open == False and utils.compute_10min_slope(self.sliding_window) < -1)
+        return falling
+
+    def is_falling_extreme_last2min(self) -> bool:
+        falling = len(self.sliding_window) >= 2 and self.sliding_window[-2]["value"] - self.sliding_window[-1]["value"] > 5
+        return falling
+
+    def is_outlier_2week_mean(self, value)-> bool: #change to median
+        ratio = 3
+        too_low = (value<(self.mean_2week-ratio*self.std_2week))
+        too_high = (value>(self.mean_2week+ratio*self.std_2week))
+
+        is_outlier = False
+        if too_low and (not utils.is_summer(self.current_day)):
+            is_outlier = True
+        elif too_high and (utils.is_summer(self.current_day)):
+            is_outlier = True
+        return is_outlier
+
+    def update_2week_stats(self, current_ts:datetime, value:float)-> (float, float):
+        if not self.window_open:
+            if not self.current_day: # initial setup
+                self.setup_new_day(current_ts, value)
+                return self.mean_2week, self.std_2week
+
+            if self.current_day > current_ts: # skip datapoints that arrive not on the same day measured
+                return self.mean_2week, self.std_2week
+
+            if self.current_day.date() < current_ts.date():  # a new day puts the old day to statistics
+                self.calc_new_stats()
+                self.setup_new_day(current_ts, value)
+                return self.mean_2week, self.std_2week
+
+            # normal add if no special case
+            self.day_measurements.append(value)
+            self.day_count += 1
+            return self.mean_2week, self.std_2week
+
+    def setup_new_day(self, current_ts, value):
+        self.current_day = current_ts
+        self.day_measurements = [value]
+        self.day_count = 1
+
+    def calc_new_stats(self):
+        if self.check_add_day_to_statistics():
+            day_avg = np.mean(self.day_measurements)
+            day_std = np.std(self.day_measurements)
+            self.day_vals_last2weeks['mean'].append(day_avg)
+            self.day_vals_last2weeks['std'].append(day_std)
+            self.day_vals_last2weeks['point_count'].append(self.day_count)
+
+            if len(self.day_vals_last2weeks['mean'])>=14:
+                self.day_vals_last2weeks['mean'] = self.day_vals_last2weeks['mean'][-14:] # if list was full before last item is slided out
+                self.day_vals_last2weeks['std'] = self.day_vals_last2weeks['std'][-14:]
+                self.day_vals_last2weeks['point_count'] = self.day_vals_last2weeks['point_count'][-14:]
+
+                self.mean_2week = np.mean(self.day_vals_last2weeks['mean'])   # will be calculated once enough days are gathered
+                self.std_2week = np.mean(self.day_vals_last2weeks['std'])
+                self.mean_count_per_day = np.mean(self.day_vals_last2weeks['point_count'])
+                self.std_count_per_day = np.std(self.day_vals_last2weeks['point_count'])
+
+
+    def check_add_day_to_statistics(self):
+        day_count = self.day_count
+        mean = self.mean_count_per_day
+        std = self.std_count_per_day
+        if not mean or not ((day_count < (mean - 2 * std)) or (day_count > (mean + 2 * std))):
+            return True
+        else:
+            self.dismissed_point_counts.append((self.current_day, day_count, mean, std, self.day_vals_last2weeks['point_count']))
+            return False
+
 from operator_lib.operator_lib import OperatorLib
 if __name__ == "__main__":
     OperatorLib(Operator(), name="open-window-detection-operator", git_info_file='git_commit')
