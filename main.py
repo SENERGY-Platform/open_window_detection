@@ -85,7 +85,9 @@ class Operator(OperatorBase):
 
         self.first_data_time = load(self.config.data_path, FIRST_DATA_FILENAME)
 
-        self.sliding_window = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
+        self.sliding_window_humid = [] # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
+        self.sliding_window_temp = []
+        
         self.unsusual_drop_detections = load(self.data_path, UNUSUAL_FILENAME, [])
         self.unsusual_2week_detections = load(self.data_path, UNUSUAL_2WEEKS_FILENAME, [])
         self.dismissed_point_counts = load(self.data_path, POINTCOUNT_FILENAME, [])
@@ -116,28 +118,33 @@ class Operator(OperatorBase):
             save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
             self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time, self.produce)
 
-        new_value = float(data['Humidity'])
-        logger.debug('Humidity: '+str(new_value)+'  '+'Humidity Time: '+ timestamp_to_str(current_timestamp))
+        new_humid = float(data['Humidity'])
+        new_temp = float(data['Temperature'])
+        logger.debug('Humidity: '+str(new_humid)+'  '+'Temperature: '+str(new_temp)+'   '+'Humidity Time: '+ timestamp_to_str(current_timestamp))
 
-        self.update_2week_stats(current_timestamp, new_value)
-        self.sliding_window = utils.update_sliding_window(self.sliding_window, new_value, current_timestamp)
-        sampled_sliding_window = utils.minute_resampling(self.sliding_window)
-        front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
+        self.update_2week_stats(current_timestamp, new_humid)
+        self.sliding_window_humid = utils.update_sliding_window(self.sliding_window_humid, new_humid, current_timestamp)
+        self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, new_temp, current_timestamp)
+        sampled_sliding_window_humid = utils.minute_resampling(self.sliding_window_humid)
+        sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
+        front_mean_humid, front_std_humid, end_mean_humid = utils.compute_front_end_measures(sampled_sliding_window_humid)
+        front_mean_temp, front_std_temp, end_mean_temp = utils.compute_front_end_measures(sampled_sliding_window_temp)
 
-        if self.unusual_drop_detected(new_value, current_timestamp, front_mean, front_std, end_mean, sampled_sliding_window):
-                self.unsusual_drop_detections.append((current_timestamp, new_value, utils.compute_10min_slope(sampled_sliding_window)))
+        if (self.unusual_drop_detected(new_humid, current_timestamp, front_mean_humid, front_std_humid, end_mean_humid, sampled_sliding_window_humid) and 
+            self.temp_change_detected(front_mean_temp, front_std_temp, end_mean_temp)):
+                self.unsusual_drop_detections.append((current_timestamp, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid)))
                 save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
                 logger.info("Unusual humidity drop!")
                 self.window_open = True
         else:
-            if self.window_open and self.sliding_window[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
+            if self.window_open and self.sliding_window_humid[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
                 self.window_open = False
-                self.window_closing_times.append((current_timestamp, new_value))
+                self.window_closing_times.append((current_timestamp, new_humid))
                 save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
                 logger.info("Window closed!")
 
         if self.window_open == False and self.last_closing_time != False and current_timestamp - self.last_closing_time <= pd.Timedelta(30, "min"):
-            time_window_since_last_closing = [entry["value"] for entry in sampled_sliding_window if entry["timestamp"] >= self.last_closing_time]
+            time_window_since_last_closing = [entry["value"] for entry in sampled_sliding_window_humid if entry["timestamp"] >= self.last_closing_time]
             if np.mean(time_window_since_last_closing) >= 65 and self.too_fast_high_humid_detected == False:
                 self.too_fast_humid_risings.append(data['Humidity_Time'])
                 save(self.data_path, TOO_FAST_TOO_HIGH_HUMID_FILENAME, self.too_fast_humid_risings)
@@ -172,10 +179,7 @@ class Operator(OperatorBase):
                     "initial_phase": ""}
 
     def unusual_drop_detected(self, current_value, current_timestamp, front_mean, front_std, end_mean, sampled_sliding_window) -> bool:
-        if (self.is_falling_unusually(front_mean, front_std, end_mean)) and (
-                (self.window_open == True) or # already open
-                (self.is_falling_last10min()) or
-                (self.is_falling_extreme_last2min())):
+        if self.is_falling_unusually(front_mean, front_std, end_mean) and self.is_falling_last10min():
             return True
         elif self.mean_2week and self.is_outlier_2week_mean(current_value):
             self.unsusual_2week_detections.append(
@@ -184,16 +188,11 @@ class Operator(OperatorBase):
         return False
 
     def is_falling_unusually(self, front_mean, front_std, end_mean) -> bool:
-        falling = (end_mean < front_mean - 2 * front_std and front_mean - end_mean > 2 and
-                   self.sliding_window[-1]["value"] < self.sliding_window[-2]["value"])
+        falling = (end_mean < front_mean - front_std and self.sliding_window_humid[-1]["value"] < self.sliding_window_humid[-2]["value"])
         return falling
 
     def is_falling_last10min(self) -> bool:
-        falling = (self.window_open == False and utils.compute_10min_slope(self.sliding_window) < -1)
-        return falling
-
-    def is_falling_extreme_last2min(self) -> bool:
-        falling = len(self.sliding_window) >= 2 and self.sliding_window[-2]["value"] - self.sliding_window[-1]["value"] > 5
+        falling = utils.compute_10min_slope(self.sliding_window_humid) < -1
         return falling
 
     def is_outlier_2week_mean(self, value)-> bool: #change to median
@@ -259,6 +258,12 @@ class Operator(OperatorBase):
             return True
         else:
             self.dismissed_point_counts.append((self.current_day, day_count, mean, std, self.day_vals_last2weeks['point_count']))
+            return False
+        
+    def temp_change_detected(self, front_mean_temp, front_std_temp, end_mean_temp):
+        if front_mean_temp-end_mean_temp > 0:
+            return True
+        else:
             return False
 
 from operator_lib.operator_lib import OperatorLib
