@@ -21,7 +21,7 @@ from shutil import Error
 import dotenv
 dotenv.load_dotenv()
 
-from operator_lib.util import OperatorBase, logger, InitPhase, todatetime, timestamp_to_str
+from operator_lib.util import OperatorBase, logger, InitPhase, todatetime, timestamp_to_str, Selector
 from operator_lib.util.persistence import save, load
 import os
 import pandas as pd
@@ -56,6 +56,11 @@ class CustomConfig(Config):
 
 class Operator(OperatorBase):
     configType = CustomConfig
+
+    selectors = [
+        Selector({"name": "humidity", "args": ["Humidity", "Humidity_Time"]}),
+        Selector({"name": "temperature", "args": ["Temperature", "Temperature_Time"]})
+    ]
 
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)
@@ -95,6 +100,9 @@ class Operator(OperatorBase):
         self.window_open = False
         self.window_closing_times = load(self.data_path, WINDOW_FILENAME, [])
 
+        self.unusual_humidity_drop_detected = False
+        self.temperature_drop_detected = False
+
         self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
         self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
         value = {
@@ -110,74 +118,116 @@ class Operator(OperatorBase):
         save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
         save(self.data_path, UNUSUAL_2WEEKS_FILENAME, self.unsusual_2week_detections)
         save(self.data_path, POINTCOUNT_FILENAME, self.dismissed_point_counts)
+
+    def update_sliding_window_statistics(self, new_value, current_timestamp, current_window):
+        sliding_window = utils.update_sliding_window(current_window, new_value, current_timestamp)
+        sampled_sliding_window = utils.minute_resampling(sliding_window)
+        front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
+        return sliding_window, front_mean, front_std, end_mean
     
-    def run(self, data, selector = None, device_id=None):
-        current_timestamp = todatetime(data['Humidity_Time'])
-        if not self.first_data_time:
-            self.first_data_time = current_timestamp
-            save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
-            self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+    def run(self, data, selector, device_id=None):
+        if selector == "humidity":
+            current_humid_time = todatetime(data['Humidity_Time'])
+            if not self.first_data_time:
+                self.first_data_time = current_humid_time
+                save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
+                self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+            new_humid = float(data['Humidity'])
 
-        new_humid = float(data['Humidity'])
-        new_temp = float(data['Temperature'])
-        logger.debug('Humidity: '+str(new_humid)+'  '+'Temperature: '+str(new_temp)+'   '+'Humidity Time: '+ timestamp_to_str(current_timestamp))
+            logger.debug("Humidity" + ":  " + str(new_humid) + '  ' + "Humidity Time: "+ timestamp_to_str(current_humid_time))
 
-        self.update_2week_stats(current_timestamp, new_humid)
-        self.sliding_window_humid = utils.update_sliding_window(self.sliding_window_humid, new_humid, current_timestamp)
-        self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, new_temp, current_timestamp)
-        sampled_sliding_window_humid = utils.minute_resampling(self.sliding_window_humid)
-        sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
-        front_mean_humid, front_std_humid, end_mean_humid = utils.compute_front_end_measures(sampled_sliding_window_humid)
-        front_mean_temp, front_std_temp, end_mean_temp = utils.compute_front_end_measures(sampled_sliding_window_temp)
-
-        if (self.unusual_drop_detected(new_humid, current_timestamp, front_mean_humid, front_std_humid, end_mean_humid, sampled_sliding_window_humid) and 
-            self.temp_change_detected(front_mean_temp, front_std_temp, end_mean_temp)):
-                self.unsusual_drop_detections.append((current_timestamp, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid)))
+            self.update_2week_stats(current_humid_time, new_humid)
+            self.sliding_window_humid = utils.update_sliding_window(self.sliding_window_humid, new_humid, current_humid_time)
+            sampled_sliding_window_humid = utils.minute_resampling(self.sliding_window_humid)
+            front_mean_humid, front_std_humid, end_mean_humid = utils.compute_front_end_measures(sampled_sliding_window_humid)
+            self.unusual_humidity_drop_detected = self.unusual_drop_detected(new_humid, current_humid_time, front_mean_humid, front_std_humid, end_mean_humid, sampled_sliding_window_humid)
+            if self.unusual_humidity_drop_detected and self.temperature_drop_detected:
+                self.unsusual_drop_detections.append((current_humid_time, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid)))
                 save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
                 logger.info("Unusual humidity drop!")
                 self.window_open = True
-        else:
-            if self.window_open and self.sliding_window_humid[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
-                self.window_open = False
-                self.window_closing_times.append((current_timestamp, new_humid))
-                save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
-                logger.info("Window closed!")
-
-        if self.window_open == False and self.last_closing_time != False and current_timestamp - self.last_closing_time <= pd.Timedelta(30, "min"):
-            time_window_since_last_closing = [entry["value"] for entry in sampled_sliding_window_humid if entry["timestamp"] >= self.last_closing_time]
-            if np.mean(time_window_since_last_closing) >= 65 and self.too_fast_high_humid_detected == False:
-                self.too_fast_humid_risings.append(data['Humidity_Time'])
-                save(self.data_path, TOO_FAST_TOO_HIGH_HUMID_FILENAME, self.too_fast_humid_risings)
-                logger.info("Humidity too fast too high after closing the window!")
-                self.too_fast_high_humid_detected = True
-        elif self.window_open == False and self.last_closing_time != False and current_timestamp - self.last_closing_time > pd.Timedelta(30, "min"):
-            self.too_fast_high_humid_detected = False
-
-        init_value = {
-            "window_open": False,
-            "timestamp": timestamp_to_str(current_timestamp),
-            "humidity_too_fast_too_high": ""
-        }
-        operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_timestamp)
-        if operator_is_init:
-            logger.debug(self.init_phase_handler.generate_init_msg(current_timestamp, init_value))
-            return self.init_phase_handler.generate_init_msg(current_timestamp, init_value)
-
-        if self.init_phase_handler.init_phase_needs_to_be_reset():
-            logger.debug(self.init_phase_handler.reset_init_phase(init_value))
-            return self.init_phase_handler.reset_init_phase(init_value)
+            else:
+                if self.window_open and self.sliding_window_humid[-1]["value"] - self.unsusual_drop_detections[-1][1] > 1:
+                    self.window_open = False
+                    self.window_closing_times.append((current_humid_time, new_humid))
+                    save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
+                    logger.info("Window closed!")
         
-        if self.too_fast_high_humid_detected:
-            logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
+            if self.window_open == False and self.last_closing_time != False and current_humid_time - self.last_closing_time <= pd.Timedelta(30, "min"):
+                time_window_since_last_closing_humid = [entry["value"] for entry in sampled_sliding_window_humid if entry["timestamp"] >= self.last_closing_time]
+                if np.mean(time_window_since_last_closing_humid) >= 65 and self.too_fast_high_humid_detected == False:
+                    self.too_fast_humid_risings.append(data['Humidity_Time'])
+                    save(self.data_path, TOO_FAST_TOO_HIGH_HUMID_FILENAME, self.too_fast_humid_risings)
+                    logger.info("Humidity too fast too high after closing the window!")
+                    self.too_fast_high_humid_detected = True
+            elif self.window_open == False and self.last_closing_time != False and current_humid_time - self.last_closing_time > pd.Timedelta(30, "min"):
+                self.too_fast_high_humid_detected = False
+            
+            init_value = {
+                "window_open": False,
+                "timestamp": timestamp_to_str(current_humid_time),
+                "humidity_too_fast_too_high": ""
+            }
+            operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_humid_time)
+            if operator_is_init:
+                logger.debug(self.init_phase_handler.generate_init_msg(current_humid_time, init_value))
+                return self.init_phase_handler.generate_init_msg(current_humid_time, init_value)
+
+            if self.init_phase_handler.init_phase_needs_to_be_reset():
+                logger.debug(self.init_phase_handler.reset_init_phase(init_value))
+                return self.init_phase_handler.reset_init_phase(init_value)
+        
+            if self.too_fast_high_humid_detected:
+                logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_humid_time), "humidity_too_fast_too_high": timestamp_to_str(current_humid_time), 
                     "initial_phase": ""})
-            return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
+                return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_humid_time), "humidity_too_fast_too_high": timestamp_to_str(current_humid_time), 
                     "initial_phase": ""}
-        else:
-            logger.debug(logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": timestamp_to_str(current_timestamp), 
+            else:
+                logger.debug(logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_humid_time), "humidity_too_fast_too_high": "", 
                     "initial_phase": ""}))
-            return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_timestamp), "humidity_too_fast_too_high": "", 
+                return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_humid_time), "humidity_too_fast_too_high": "", 
+                    "initial_phase": ""}
+        
+        
+        elif selector == "temperature":
+            current_temp_time = todatetime(data['Temperature_Time'])
+            if not self.first_data_time:
+                self.first_data_time = current_temp_time
+                save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
+                self.init_phase_handler = InitPhase(self.config.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+            new_temp = float(data['Temperature'])
+            logger.debug("Temperature" + ":  " + str(new_temp) + '  ' + "Temperature Time: "+ timestamp_to_str(current_temp_time))
+            self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, new_temp, current_temp_time)
+            sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
+            front_mean_temp, front_std_temp, end_mean_temp = utils.compute_front_end_measures(sampled_sliding_window_temp)
+            self.temperature_drop_detected = self.temp_change_detected(front_mean_temp, front_std_temp, end_mean_temp)
+            if self.unusual_humidity_drop_detected and self.temperature_drop_detected:
+                self.unsusual_drop_detections.append((current_humid_time, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid)))
+                save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
+                logger.info("Unusual humidity drop!")
+                self.window_open = True
+
+            init_value = {
+                "window_open": False,
+                "timestamp": timestamp_to_str(current_temp_time),
+                "humidity_too_fast_too_high": ""
+            }
+            operator_is_init = self.init_phase_handler.operator_is_in_init_phase(current_temp_time)
+            if operator_is_init:
+                logger.debug(self.init_phase_handler.generate_init_msg(current_temp_time, init_value))
+                return self.init_phase_handler.generate_init_msg(current_temp_time, init_value)
+
+            if self.init_phase_handler.init_phase_needs_to_be_reset():
+                logger.debug(self.init_phase_handler.reset_init_phase(init_value))
+                return self.init_phase_handler.reset_init_phase(init_value)
+            
+            logger.debug(logger.debug({"window_open": self.window_open, "timestamp": timestamp_to_str(current_temp_time), "humidity_too_fast_too_high": "", 
+                    "initial_phase": ""}))
+            return {"window_open": self.window_open, "timestamp": timestamp_to_str(current_temp_time), "humidity_too_fast_too_high": "", 
                     "initial_phase": ""}
 
+    
+    
     def unusual_drop_detected(self, current_value, current_timestamp, front_mean, front_std, end_mean, sampled_sliding_window) -> bool:
         if self.is_falling_unusually(front_mean, front_std, end_mean) and self.is_falling_last10min():
             return True
