@@ -142,7 +142,7 @@ class Operator(OperatorBase):
             front_mean_humid, front_std_humid, end_mean_humid = utils.compute_front_end_measures(sampled_sliding_window_humid)
             self.unusual_humidity_drop_detected = self.unusual_drop_detected(new_humid, current_humid_time, front_mean_humid, front_std_humid, end_mean_humid, sampled_sliding_window_humid)
             if self.unusual_humidity_drop_detected and self.temperature_drop_detected:
-                self.unsusual_drop_detections.append((current_humid_time, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid)))
+                self.unsusual_drop_detections.append((current_humid_time, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid), "triggered_through_humid_value"))
                 save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
                 logger.info("Unusual humidity drop!")
                 self.window_open = True
@@ -202,7 +202,7 @@ class Operator(OperatorBase):
             front_mean_temp, front_std_temp, end_mean_temp = utils.compute_front_end_measures(sampled_sliding_window_temp)
             self.temperature_drop_detected = self.temp_change_detected(front_mean_temp, front_std_temp, end_mean_temp)
             if self.unusual_humidity_drop_detected and self.temperature_drop_detected:
-                self.unsusual_drop_detections.append((current_humid_time, new_humid, utils.compute_10min_slope(sampled_sliding_window_humid)))
+                self.unsusual_drop_detections.append((current_temp_time, new_temp, "triggered_through_temp_value"))
                 save(self.data_path, UNUSUAL_FILENAME, self.unsusual_drop_detections)
                 logger.info("Unusual humidity drop!")
                 self.window_open = True
