@@ -36,6 +36,8 @@ WINDOW_FILENAME = "window_closing_times.pickle"
 FIRST_DATA_FILENAME = "first_data_time.pickle"
 TOO_FAST_TOO_HIGH_HUMID_FILENAME = "too_fast_too_high_humid.pickle"
 LAST_CLOSING_TIME_FILENAME = "last_closing_time.pickle"
+PENDING_2WEEKS_POSITIVE_FILENAME = "pending_2weeks_positive.pickle"
+WAITING_FOR_RESET_2WEEKS_FILENAME = "waiting_for_reset_2weeks.pickle"
 
 from operator_lib.util import Config
 class CustomConfig(Config):
@@ -74,6 +76,9 @@ class Operator(OperatorBase):
         self.std_2week = None
         self.mean_count_per_day = None
         self.std_count_per_day = None
+        self.pending_2week_positive = False
+        self.waiting_for_reset_2weeks = False
+        self.ratio_2weeks = 3
 
         if not os.path.exists(self.data_path):
             os.mkdir(self.data_path)
@@ -89,6 +94,8 @@ class Operator(OperatorBase):
         self.unsusual_drop_detections = load(self.data_path, UNUSUAL_FILENAME, [])
         self.unsusual_2week_detections = load(self.data_path, UNUSUAL_2WEEKS_FILENAME, [])
         self.dismissed_point_counts = load(self.data_path, POINTCOUNT_FILENAME, [])
+        self.pending_2week_positive_counts = load(self.data_path, PENDING_2WEEKS_POSITIVE_FILENAME, [])
+        self.waiting_for_reset_2weeks_counts = load(self.data_path, WAITING_FOR_RESET_2WEEKS_FILENAME, [])
  
         self.window_open = False
         self.window_closing_times = load(self.data_path, WINDOW_FILENAME, [])
@@ -108,7 +115,9 @@ class Operator(OperatorBase):
         save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
         save(self.data_path, UNUSUAL_2WEEKS_FILENAME, self.unsusual_2week_detections)
         save(self.data_path, POINTCOUNT_FILENAME, self.dismissed_point_counts)
-    
+        save(self.data_path, PENDING_2WEEKS_POSITIVE_FILENAME, self.pending_2week_positive_counts)
+        save(self.data_path, WAITING_FOR_RESET_2WEEKS_FILENAME, self.waiting_for_reset_2weeks_counts)
+
     def run(self, data, selector = None, device_id=None):
         current_timestamp = todatetime(data['Humidity_Time'])
         if not self.first_data_time:
@@ -135,6 +144,17 @@ class Operator(OperatorBase):
                 self.window_closing_times.append((current_timestamp, new_value))
                 save(self.data_path, WINDOW_FILENAME, self.window_closing_times)
                 logger.info("Window closed!")
+
+        if self.pending_2week_positive and utils.compute_n_min_slope(sampled_sliding_window, 5) > 0:  # todo: take out when global solution applied
+            self.waiting_for_reset_2weeks = True
+            self.waiting_for_reset_2weeks_counts.append((current_timestamp, new_value, self.mean_2week, self.std_2week, True))
+            self.pending_2week_positive = False
+            self.pending_2week_positive_counts.append((current_timestamp, new_value, self.mean_2week, self.std_2week, False))
+
+            save(self.data_path, PENDING_2WEEKS_POSITIVE_FILENAME, self.pending_2week_positive_counts)
+            save(self.data_path, WAITING_FOR_RESET_2WEEKS_FILENAME, self.waiting_for_reset_2weeks_counts)
+
+        self.update_waiting_for_reset_2week(new_value, current_timestamp)
 
         if self.window_open == False and self.last_closing_time != False and current_timestamp - self.last_closing_time <= pd.Timedelta(30, "min"):
             time_window_since_last_closing = [entry["value"] for entry in sampled_sliding_window if entry["timestamp"] >= self.last_closing_time]
@@ -178,9 +198,16 @@ class Operator(OperatorBase):
                 (self.is_falling_extreme_last2min())):
             return True
         elif self.mean_2week and self.is_outlier_2week_mean(current_value):
-            self.unsusual_2week_detections.append(
-                (current_timestamp, current_value, self.mean_2week, self.std_2week, utils.compute_10min_slope(sampled_sliding_window)))
-            return True
+            if utils.compute_n_min_slope(sampled_sliding_window, 5)<=0 and not self.waiting_for_reset_2weeks: # improvements on false Positives
+                self.unsusual_2week_detections.append(
+                    (current_timestamp, current_value, self.mean_2week, self.std_2week, utils.compute_n_min_slope(sampled_sliding_window, 5)))
+                save(self.data_path, UNUSUAL_2WEEKS_FILENAME, self.unsusual_2week_detections)
+
+                if not self.pending_2week_positive:
+                    self.pending_2week_positive = True
+                    self.pending_2week_positive_counts.append((current_timestamp, current_value, self.mean_2week, self.std_2week, True))
+                    save(self.data_path, PENDING_2WEEKS_POSITIVE_FILENAME, self.pending_2week_positive_counts)
+                return True
         return False
 
     def is_falling_unusually(self, front_mean, front_std, end_mean) -> bool:
@@ -197,7 +224,7 @@ class Operator(OperatorBase):
         return falling
 
     def is_outlier_2week_mean(self, value)-> bool: #change to median
-        ratio = 3
+        ratio = self.ratio_2weeks
         too_low = (value<(self.mean_2week-ratio*self.std_2week))
         too_high = (value>(self.mean_2week+ratio*self.std_2week))
 
@@ -207,6 +234,16 @@ class Operator(OperatorBase):
         elif too_high and (utils.is_summer(self.current_day)):
             is_outlier = True
         return is_outlier
+
+    def update_waiting_for_reset_2week(self, current_value, current_ts) -> None:
+        if self.mean_2week:
+            ratio = self.ratio_2weeks
+            lower_thresh = self.mean_2week-ratio*self.std_2week
+            higher_thresh = self.mean_2week+ratio*self.std_2week
+            if lower_thresh <= current_value <= higher_thresh and self.waiting_for_reset_2weeks:
+                self.waiting_for_reset_2weeks = False
+                self.waiting_for_reset_2weeks_counts.append((current_ts, current_value, self.mean_2week, self.std_2week, False))
+                save(self.data_path, WAITING_FOR_RESET_2WEEKS_FILENAME, self.waiting_for_reset_2weeks_counts)
 
     def update_2week_stats(self, current_ts:datetime, value:float)-> (float, float):
         if not self.window_open:
