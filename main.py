@@ -148,7 +148,8 @@ class Operator(OperatorBase):
 
             self.humid_drop_detected = False # only set to true if drops feature detected unusual humidity drop
 
-            if self.window_open and utils.compute_n_min_slope(sampled_sliding_window_humid, 10) > 0.12: #TODO: set better threshold
+            if (self.window_open and (utils.compute_n_min_slope(sampled_sliding_window_humid, 10) > 0.12
+                                      or utils.compute_diff_to_pred(self.sliding_window_humid)>1.2)):
                     self.save_closed_window(current_humid_timestamp, current_humid_value)
             else:
                 detected, feature = self.detect(current_humid_value, current_humid_timestamp, sampled_sliding_window_humid, selector)
