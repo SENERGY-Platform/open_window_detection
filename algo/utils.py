@@ -47,19 +47,16 @@ def minute_resampling(sliding_window):
         return resampled_sliding_window
     return sliding_window
 
-def compute_10min_slope(sampled_sliding_window):
-    last_10min_window = sampled_sliding_window[-10:]  # This simple slicing makes sense here because sampled_sliding_window has a frequency of 1/min
-    last_10min_values = [entry["value"] for entry in last_10min_window]
-    last_10min_slope = float(last_10min_values[-1] - last_10min_values[0]) # Note, that taking the differnece here suffices, because the considered x-range is always 10min (fixed!).
-    return last_10min_slope
-
 def compute_n_min_slope(sampled_sliding_window, n:int):
-    last_n_min_window = sampled_sliding_window[-n:]# This simple slicing makes sense here because sampled_sliding_window has a frequency of 1/min
-    last_n_ts = [entry['timestamp'].timestamp() for entry in last_n_min_window]
-    last_n_values = [entry["value"] for entry in last_n_min_window]
+    if len(sampled_sliding_window) < 2:
+        return 0
+    else:
+        last_n_min_window = sampled_sliding_window[-n:] # This simple slicing makes sense here because sampled_sliding_window has a frequency of 1/min
+        last_n_ts = [entry['timestamp'].timestamp() for entry in last_n_min_window]
+        last_n_values = [entry["value"] for entry in last_n_min_window]
 
-    slope, intercept, r_value, p_value, std_err = stats.linregress(last_n_ts, last_n_values)
-    return slope
+        slope, intercept, r_value, p_value, std_err = stats.linregress(last_n_ts, last_n_values)
+        return slope
 
 def is_summer(date:datetime):
     sum_start = 4
