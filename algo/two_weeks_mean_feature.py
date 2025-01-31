@@ -17,6 +17,11 @@ class TwoWeekMeanFeature:
         self._pending_positive_file = pending_positive_file
         self._waiting_for_reset_file = wait_for_reset_file
 
+        self._mean_2week_file = "current_2week_mean.pickle"
+        self._std_2week_file = "current_2week_std.pickle"
+        self._mean_count_per_day_file = "current_mean_count_per_day.pickle"
+        self._std_count_per_day_file = "current_std_count_per_day.pickle"
+
         self._current_day = None
         self._day_measurements = []
         self._day_count = 0
@@ -41,6 +46,11 @@ class TwoWeekMeanFeature:
         self._pending_positive_counts = load(self._data_path, self._pending_positive_file, [])
         self._waiting_for_reset_counts = load(self._data_path, self._waiting_for_reset_file, [])
         self._dismissed_point_counts = load(self._data_path, self._dismissed_point_counts_file, [])
+
+        self._mean_2week = load(self._data_path, self._mean_2week_file, [])
+        self._std_2week = load(self._data_path, self._std_2week_file, [])
+        self._mean_count_per_day = load(self._data_path, self._mean_count_per_day_file, [])
+        self._std_count_per_day = load(self._data_path, self._std_count_per_day_file, [])
 
     def stop(self):
         save(self._data_path, self._detections_file, self._detections)
@@ -112,7 +122,7 @@ class TwoWeekMeanFeature:
 
     def __update_reset(self, current_ts, current_value, sampled_sliding_window):
         slope = utils.compute_n_min_slope(sampled_sliding_window, self._slope_min)
-        if self._pending_positive and slope > 0:
+        if self._pending_positive and slope > 0.12:
             self._waiting_for_reset = True
             self._pending_positive = False
 

@@ -42,7 +42,6 @@ def minute_resampling(sliding_window):
         data_series.index = data_series.index.map(lambda x: x.round("S"))
         data_series = data_series[~data_series.index.duplicated(keep='last')]
         resampled_data_series = data_series.resample('s').interpolate().resample('T').asfreq().dropna()
-        resampled_data_series = resampled_data_series.loc[resampled_data_series.index[-1] - pd.Timedelta(180,'min'):] #!!
         resampled_sliding_window = resampled_data_series.reset_index().to_dict('records')
         return resampled_sliding_window
     return sliding_window
@@ -52,10 +51,7 @@ def compute_n_min_slope(sampled_sliding_window, n:int):
         return 0
     else:
         last_n_min_window = sampled_sliding_window[-n:] # This simple slicing makes sense here because sampled_sliding_window has a frequency of 1/min
-        last_n_ts = [entry['timestamp'].timestamp() for entry in last_n_min_window]
-        last_n_values = [entry["value"] for entry in last_n_min_window]
-
-        slope, intercept, r_value, p_value, std_err = stats.linregress(last_n_ts, last_n_values)
+        slope = (last_n_min_window[-1]["value"] - last_n_min_window[0]["value"])/len(last_n_min_window)
         return slope
 
 def is_summer(date:datetime):

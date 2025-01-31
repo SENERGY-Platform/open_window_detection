@@ -37,15 +37,20 @@ class DropsAndRisingsFeature:
         return self._humidity_rebound_detected
 
 
-    def detect(self, current_ts, current_value, sliding_window,  sampled_sliding_window, window_currently_open):
-        if ((self.is_falling_unusually(sliding_window, sampled_sliding_window)) and
-            ((window_currently_open == True) or
-             (self.is_falling_last10min(window_currently_open, sampled_sliding_window)) or
-             (self.is_falling_extreme_last2min(sliding_window)))):
-                self._detections.append((current_ts, current_value))
-                save(self._data_path, self._detections_file, self._detections)
+    def detect(self, current_ts, current_value, sliding_window,  sampled_sliding_window, window_currently_open, selector, std_factor=2):
+        if selector == "humidity":
+            if ((self.is_falling_unusually(sliding_window, sampled_sliding_window, selector, std_factor)) and
+                ((window_currently_open == True) or
+                (self.is_falling_last10min(window_currently_open, sampled_sliding_window)) or
+                (self.is_falling_extreme_last2min(sliding_window)))):
+                    self._detections.append((current_ts, current_value))
+                    save(self._data_path, self._detections_file, self._detections)
+                    return True
+            return False
+        elif selector == "temperature":
+            if self.is_falling_unusually(sliding_window, sampled_sliding_window, selector, std_factor):
                 return True
-        return False
+            return False
 
     def check_for_fast_risings(self, current_timestamp, sampled_sliding_window, window_currently_open, last_closing_time):
         if (window_currently_open == False and last_closing_time != False and
@@ -63,14 +68,18 @@ class DropsAndRisingsFeature:
             self._humidity_rebound_detected = False
         return self._humidity_rebound_detected
 
-    def is_falling_unusually(self, sliding_window, sampled_sliding_window) -> bool:
+    def is_falling_unusually(self, sliding_window, sampled_sliding_window, selector, std_factor) -> bool:
         front_mean, front_std, end_mean = utils.compute_front_end_measures(sampled_sliding_window)
-        falling = (end_mean < front_mean - 2 * front_std and front_mean - end_mean > 2 and
-                   sliding_window[-1]["value"] < sliding_window[-2]["value"])
-        return falling
+        if selector == "humidity":
+            falling = (end_mean < front_mean - std_factor * front_std and front_mean - end_mean > 2 and
+                    sliding_window[-1]["value"] < sliding_window[-2]["value"])
+            return falling
+        elif selector == "temperature":
+            falling = (end_mean < front_mean - std_factor * front_std and sliding_window[-1]["value"] < sliding_window[-2]["value"])
+            return falling
 
     def is_falling_last10min(self, window_currently_open, sampled_sliding_window) -> bool:
-        falling = (window_currently_open == False and utils.compute_n_min_slope(sampled_sliding_window, 10) < -1)
+        falling = (window_currently_open == False and utils.compute_n_min_slope(sampled_sliding_window, 10) < -.1)
         return falling
 
     def is_falling_extreme_last2min(self, sliding_window) -> bool:
