@@ -99,6 +99,7 @@ class Operator(OperatorBase):
         self.sliding_window_temp = load(self.data_path, SLIDING_WINDOW_TEMP_FILENAME, []) # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": temperature}
  
         self.window_open = False
+        self.open_min = None
         self.window_closing_times = load(self.data_path, WINDOW_CLOSING_FILENAME, [])
         self.detections = load(self.data_path, ALL_DETECTIONS_FILENAME, [])
 
@@ -149,7 +150,7 @@ class Operator(OperatorBase):
             self.humid_drop_detected = False # only set to true if drops feature detected unusual humidity drop
 
             if (self.window_open and (utils.compute_n_min_slope(sampled_sliding_window_humid, 10) > 0.12
-                                      or utils.compute_diff_to_pred(self.sliding_window_humid)>1.2)):
+                                      or (self.open_min and (current_humid_value - self.open_min>1.2)))):
                     self.save_closed_window(current_humid_timestamp, current_humid_value)
             else:
                 detected, feature = self.detect(current_humid_value, current_humid_timestamp, sampled_sliding_window_humid, selector)
@@ -216,6 +217,8 @@ class Operator(OperatorBase):
     def save_detection(self, current_timestamp, current_value, feature, slope):
         two_w_mean = self.twoWeeksMean_feature.mean_2weeks
         two_w_std = self.twoWeeksMean_feature.std_2week
+        self.open_min = current_value if self.open_min is None else min(self.open_min, current_value)
+
         self.detections.append((current_timestamp, current_value, feature, slope, two_w_mean, two_w_std))
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
         logger.info("Detected an open window!")
@@ -223,6 +226,7 @@ class Operator(OperatorBase):
 
     def save_closed_window(self, current_timestamp, current_value):
         self.window_open = False
+        self.open_min = None
         self.last_closing_time=current_timestamp
         self.window_closing_times.append((current_timestamp, current_value))
 

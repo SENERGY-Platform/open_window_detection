@@ -54,13 +54,6 @@ def compute_n_min_slope(sampled_sliding_window, n:int):
         slope = (last_n_min_window[-1]["value"] - last_n_min_window[0]["value"])/len(last_n_min_window)
         return slope
 
-def compute_diff_to_pred(sliding_window):
-    if len(sliding_window) < 2:
-        return 0
-    else:
-        slope = sliding_window[-1]["value"] - sliding_window[-2]["value"]
-        return slope
-
 def is_summer(date:datetime):
     sum_start = 4
     sum_end = 9
