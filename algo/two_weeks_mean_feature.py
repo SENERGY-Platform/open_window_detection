@@ -47,10 +47,10 @@ class TwoWeekMeanFeature:
         self._waiting_for_reset_counts = load(self._data_path, self._waiting_for_reset_file, [])
         self._dismissed_point_counts = load(self._data_path, self._dismissed_point_counts_file, [])
 
-        self._mean_2week = load(self._data_path, self._mean_2week_file, [])
-        self._std_2week = load(self._data_path, self._std_2week_file, [])
-        self._mean_count_per_day = load(self._data_path, self._mean_count_per_day_file, [])
-        self._std_count_per_day = load(self._data_path, self._std_count_per_day_file, [])
+        self._mean_2week = load(self._data_path, self._mean_2week_file, None)
+        self._std_2week = load(self._data_path, self._std_2week_file, None)
+        self._mean_count_per_day = load(self._data_path, self._mean_count_per_day_file, None)
+        self._std_count_per_day = load(self._data_path, self._std_count_per_day_file, None)
 
     def stop(self):
         save(self._data_path, self._detections_file, self._detections)
