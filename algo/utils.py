@@ -16,10 +16,17 @@ def todatetime(timestamp):
     
 def update_sliding_window(sliding_window, new_value, current_timestamp):
     sliding_window.append({"timestamp": current_timestamp, "value": new_value})
-    first_entry_timestamp = sliding_window[0]["timestamp"]
-    if current_timestamp - first_entry_timestamp > pd.Timedelta(0.75,"h"):
-        del sliding_window[0]
-    return sliding_window
+    cut_index = 0
+    for i in range(len(sliding_window)-1, -1 , -1):
+         if current_timestamp - sliding_window[i]["timestamp"] > pd.Timedelta(1,"h"):
+                cut_index = i + 1
+                break
+    if len(sliding_window[cut_index:]) == 1:
+        sliding_window = sliding_window[cut_index-1:]
+        return sliding_window
+    else:
+        sliding_window = sliding_window[cut_index:]
+        return sliding_window
 
 def compute_front_end_measures(sliding_window):
     first_entry_timestamp = sliding_window[0]["timestamp"]
