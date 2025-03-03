@@ -46,6 +46,8 @@ TWO_WEEKS_WAITING_FOR_RESET_FILENAME = "2weeks_waiting_for_reset.pickle"
 SLIDING_WINDOW_HUMID_FILENAME = "sliding_window_humid.pickle"
 SLIDING_WINDOW_TEMP_FILENAME = "sliding_window_temp.pickle"
 
+LAST_TEMP_DROP_TIME_FILE = "last_temp_drop_time.pickle"
+
 from operator_lib.util import Config
 class CustomConfig(Config):
     data_path = "/opt/data"
@@ -81,6 +83,7 @@ class Operator(OperatorBase):
             self.data_path,
             DROP_DETECTIONS_FILENAME,
             DROP_HUMIDITY_REBOUNDS_FILENAME,
+            LAST_TEMP_DROP_TIME_FILE
         )
 
         self.twoWeeksMean_feature = TwoWeekMeanFeature(
@@ -157,7 +160,7 @@ class Operator(OperatorBase):
                 if detected:
                     if feature == "drops_humid":
                         self.humid_drop_detected = True
-                        if self.temp_drop_detected: # open window only then detected if humidity and temperature dropped unusually
+                        if current_humid_timestamp - self.unusualDrops_feature.last_temp_drop_time < pd.Timedelta(20,"min"): # open window only then detected if humidity and temperature dropped unusually
                             self.save_detection(current_humid_timestamp, current_humid_value, feature, slope)
                     else:
                         self.save_detection(current_humid_timestamp, current_humid_value, feature, slope)
@@ -181,6 +184,10 @@ class Operator(OperatorBase):
                 self.first_data_time = current_temp_timestamp
                 save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
                 self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+
+            # initialize last_temp_drop_time
+            if not self.unusualDrops_feature.last_temp_drop_time:
+                self.unusualDrops_feature.last_temp_drop_time = current_humid_timestamp
             
             # collect data in init phase
             self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, current_temp_value, current_temp_timestamp)
@@ -196,6 +203,7 @@ class Operator(OperatorBase):
             detected, feature = self.detect(current_temp_value, current_temp_timestamp, sampled_sliding_window_temp, selector)
             if detected:
                 self.temp_drop_detected = True
+                self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
                 if self.humid_drop_detected:
                     self.save_detection(current_temp_timestamp, current_temp_value, feature, nan)
 

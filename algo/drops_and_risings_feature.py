@@ -7,22 +7,26 @@ import numpy as np
 
 
 class DropsAndRisingsFeature:
-    def __init__(self, data_path:str, detections_file:str, humidity_spikes_file:str):
+    def __init__(self, data_path:str, detections_file:str, humidity_spikes_file:str, last_temp_drop_time_file:str):
         self._data_path = f'{data_path}/dropsAndRisings'
         if not os.path.exists(self._data_path):
             os.mkdir(self._data_path)
 
         self._detections_file = detections_file
         self._humidity_rebounds_file = humidity_spikes_file
+        self._last_temp_drop_time_file = last_temp_drop_time_file
 
         self._humidity_rebound_detected = False
 
         self._detections = load(self._data_path, self._detections_file, [])
         self._humidity_rebound_counts = load(self._data_path, self._humidity_rebounds_file, [])
 
+        self.last_temp_drop_time = load(self._data_path, self._last_temp_drop_time_file, None)
+
     def stop(self):
         save(self._data_path, self._detections_file, self._detections)
         save(self._data_path, self._humidity_rebounds_file, self._humidity_rebound_counts)
+        save(self._data_path, self._last_temp_drop_time_file, self.last_temp_drop_time)
 
     @property
     def data_path(self):
