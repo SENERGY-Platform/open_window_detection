@@ -211,14 +211,14 @@ class Operator(OperatorBase):
     def detect(self, current_value, current_timestamp, sampled_sliding_window, selector) -> (bool, str):
         if selector == "humidity":
             if self.unusualDrops_feature.detect(current_timestamp, current_value, self.sliding_window_humid,  sampled_sliding_window,
-                                                self.window_open, selector, std_factor=1.9):
+                                                self.window_open, selector, std_factor=1):
                 return True, 'drops_humid'
             elif self.twoWeeksMean_feature.detect(current_timestamp, current_value, sampled_sliding_window):
                 return True, 'twoWeekMean'
             return False, ''
         elif selector == "temperature":
             if self.unusualDrops_feature.detect(current_timestamp, current_value, self.sliding_window_temp,  sampled_sliding_window,
-                                                self.window_open, selector, std_factor=0.8):
+                                                self.window_open, selector, std_factor=0.3):
                 return True, 'drops_temp'
             return False, ''
 
