@@ -187,7 +187,7 @@ class Operator(OperatorBase):
 
             # initialize last_temp_drop_time
             if not self.unusualDrops_feature.last_temp_drop_time:
-                self.unusualDrops_feature.last_temp_drop_time = current_humid_timestamp
+                self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
             
             # collect data in init phase
             self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, current_temp_value, current_temp_timestamp)
