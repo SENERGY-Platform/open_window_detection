@@ -1,9 +1,9 @@
-name: 'two weeks mean feature build'
+name: 'v2.0 build'
 
 on:
   push:
     branches:
-      - 2weeksMean-Feature
+      - v2.0
   workflow_dispatch:
 
 jobs:
@@ -35,4 +35,4 @@ jobs:
           platforms: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64
           push: true
           tags: |
-            ghcr.io/senergy-platform/open_window_detection:two_weeks_mean_feature
+            ghcr.io/senergy-platform/open_window_detection:v2.0
