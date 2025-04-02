@@ -62,6 +62,6 @@ def compute_n_min_slope(sampled_sliding_window, n:int):
         return slope
 
 def is_summer(date:datetime):
-    sum_start = 4
-    sum_end = 9
+    sum_start = 5
+    sum_end = 8
     return sum_start<=date.month<=sum_end

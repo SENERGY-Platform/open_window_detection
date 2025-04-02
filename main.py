@@ -25,7 +25,7 @@ import os
 import pandas as pd
 from numpy import nan
 from algo import utils
-from algo.two_weeks_mean_feature import TwoWeekMeanFeature
+from algo.moving_mean_feature import MovingMeanFeature
 from algo.drops_and_risings_feature import DropsAndRisingsFeature
 
 
@@ -37,11 +37,11 @@ LAST_CLOSING_TIME_FILENAME = "last_closing_time.pickle"
 # dropsAndRisings feature
 DROP_DETECTIONS_FILENAME = "drop_detections.pickle"
 DROP_HUMIDITY_REBOUNDS_FILENAME = "drop_humidity_rebounds.pickle"
-# 2weeksMean feature
-TWO_WEEKS_DETECTIONS_FILENAME = "2weeks_detections.pickle"
-TWO_WEEKS_POINT_COUNT_FILENAME = "2weeks_point_count.pickle"
-TWO_WEEKS_PENDING_POSITIVE_FILENAME = "2weeks_pending_positive.pickle"
-TWO_WEEKS_WAITING_FOR_RESET_FILENAME = "2weeks_waiting_for_reset.pickle"
+# movingMean feature
+MOV_MEAN_DETECTIONS_FILENAME = "movingMean_detections.pickle"
+MOV_MEAN_POINT_COUNT_FILENAME = "movingMean_point_count.pickle"
+MOV_MEAN_PENDING_POSITIVE_FILENAME = "movingMean_pending_positive.pickle"
+MOV_MEAN_WAITING_FOR_RESET_FILENAME = "movingMean_waiting_for_reset.pickle"
 
 SLIDING_WINDOW_HUMID_FILENAME = "sliding_window_humid.pickle"
 SLIDING_WINDOW_TEMP_FILENAME = "sliding_window_temp.pickle"
@@ -86,13 +86,14 @@ class Operator(OperatorBase):
             LAST_TEMP_DROP_TIME_FILE
         )
 
-        self.twoWeeksMean_feature = TwoWeekMeanFeature(
+        mov_mean_model_parameters = None if 'moving_mean_model_parameters' not in kwargs else kwargs['moving_mean_model_parameters']
+        self.movingMean_feature = MovingMeanFeature(
             self.data_path,
-            TWO_WEEKS_DETECTIONS_FILENAME,
-            TWO_WEEKS_POINT_COUNT_FILENAME,
-            TWO_WEEKS_PENDING_POSITIVE_FILENAME,
-            TWO_WEEKS_WAITING_FOR_RESET_FILENAME,
-            slope_minutes=10
+            MOV_MEAN_DETECTIONS_FILENAME,
+            MOV_MEAN_POINT_COUNT_FILENAME,
+            MOV_MEAN_PENDING_POSITIVE_FILENAME,
+            MOV_MEAN_WAITING_FOR_RESET_FILENAME,
+            model_parameters=mov_mean_model_parameters
         )
 
         self.first_data_time = load(self.data_path, FIRST_DATA_FILENAME)
@@ -124,7 +125,7 @@ class Operator(OperatorBase):
         save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
         save(self.data_path, SLIDING_WINDOW_HUMID_FILENAME, self.sliding_window_humid)
         save(self.data_path, SLIDING_WINDOW_TEMP_FILENAME, self.sliding_window_temp)
-        self.twoWeeksMean_feature.stop()
+        self.movingMean_feature.stop()
         self.unusualDrops_feature.stop()
 
     def run(self, data, selector = None, device_id=None):
@@ -140,7 +141,7 @@ class Operator(OperatorBase):
                 self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
             
             # collect data in init phase
-            self.twoWeeksMean_feature.update_stats(current_humid_timestamp, current_humid_value, self.window_open)
+            self.movingMean_feature.update_stats(current_humid_timestamp, current_humid_value, self.window_open)
             self.sliding_window_humid = utils.update_sliding_window(self.sliding_window_humid, current_humid_value, current_humid_timestamp)
 
             outcome = self.check_for_init_phase(current_humid_timestamp)
@@ -168,7 +169,7 @@ class Operator(OperatorBase):
                     if self.window_open:
                         self.save_detection(current_humid_timestamp, current_humid_value, 'None', slope) # window is still open but features are not detecting anymore
 
-            self.twoWeeksMean_feature.update_reset_functionality(current_humid_timestamp, current_humid_value, sampled_sliding_window_humid)
+            self.movingMean_feature.update_reset_functionality(current_humid_timestamp, current_humid_value, sampled_sliding_window_humid)
             humidity_rebound_detected = self.unusualDrops_feature.check_for_fast_risings(
                 current_humid_timestamp, sampled_sliding_window_humid, self.window_open, self.last_closing_time)
 
@@ -213,8 +214,8 @@ class Operator(OperatorBase):
             if self.unusualDrops_feature.detect(current_timestamp, current_value, self.sliding_window_humid,  sampled_sliding_window,
                                                 self.window_open, selector, std_factor=1):
                 return True, 'drops_humid'
-            elif self.twoWeeksMean_feature.detect(current_timestamp, current_value, sampled_sliding_window):
-                return True, 'twoWeekMean'
+            elif self.movingMean_feature.detect(current_timestamp, current_value, sampled_sliding_window):
+                return True, 'moving_mean'
             return False, ''
         elif selector == "temperature":
             if self.unusualDrops_feature.detect(current_timestamp, current_value, self.sliding_window_temp,  sampled_sliding_window,
@@ -223,11 +224,11 @@ class Operator(OperatorBase):
             return False, ''
 
     def save_detection(self, current_timestamp, current_value, feature, slope):
-        two_w_mean = self.twoWeeksMean_feature.mean_2weeks
-        two_w_std = self.twoWeeksMean_feature.std_2week
+        mov_mean_mean = self.movingMean_feature.current_mean
+        mov_mean_std = self.movingMean_feature.current_std
         self.open_min = current_value if self.open_min is None else min(self.open_min, current_value)
 
-        self.detections.append((current_timestamp, current_value, feature, slope, two_w_mean, two_w_std))
+        self.detections.append((current_timestamp, current_value, feature, slope, mov_mean_mean, mov_mean_std))
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
         logger.info("Detected an open window!")
         self.window_open = True
