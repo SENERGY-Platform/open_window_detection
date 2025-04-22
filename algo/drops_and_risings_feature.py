@@ -65,7 +65,7 @@ class DropsAndRisingsFeature:
                     np.mean(time_window_since_last_closing) >= 65 and self.humidity_rebound_detected == False):
                 self._humidity_rebound_counts.append(current_timestamp)
                 save(self.data_path, self._humidity_rebounds_file, self._humidity_rebound_counts)
-                logger.info("Humidity too fast too high after closing the window!")
+                logger.info(f"{current_timestamp}:  Humidity too fast too high after closing the window!")
                 self._humidity_rebound_detected = True
             #2024-12-08T09:33:59.289000Z
         elif window_currently_open == False and last_closing_time != False and current_timestamp - last_closing_time > pd.Timedelta(30, "min"):

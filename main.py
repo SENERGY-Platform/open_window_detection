@@ -230,7 +230,7 @@ class Operator(OperatorBase):
 
         self.detections.append((current_timestamp, current_value, feature, slope, mov_mean_mean, mov_mean_std))
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
-        logger.info("Detected an open window!")
+        logger.info(f"{current_timestamp}:  Detected an open window!")
         self.window_open = True
 
     def save_closed_window(self, current_timestamp, current_value):
@@ -241,7 +241,7 @@ class Operator(OperatorBase):
 
         save(self.data_path, LAST_CLOSING_TIME_FILENAME, self.last_closing_time)
         save(self.data_path, WINDOW_CLOSING_FILENAME, self.window_closing_times)
-        logger.info("Window closed!")
+        logger.info(f"{current_timestamp}:  Window closed!")
 
     def check_for_init_phase(self, current_timestamp):
         init_value = {
