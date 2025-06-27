@@ -53,6 +53,7 @@ class CustomConfig(Config):
     data_path = "/opt/data"
     init_phase_length: float = 2
     init_phase_level: str = "d"
+    notification_mode: str = "never"
 
     def __init__(self, d, **kwargs):
         super().__init__(d, **kwargs)
@@ -117,6 +118,9 @@ class Operator(OperatorBase):
 
         self.humid_drop_detected = False
         self.temp_drop_detected = False
+
+        self.notification_mode = self.config.notification_mode
+        self.window_state_changed = False
         
     def stop(self):
         super().stop()
@@ -231,9 +235,13 @@ class Operator(OperatorBase):
         self.detections.append((current_timestamp, current_value, feature, slope, mov_mean_mean, mov_mean_std))
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
         logger.info(f"{current_timestamp}:  Detected an open window!")
+        if self.window_open == False:
+            self.window_state_changed = True
         self.window_open = True
 
     def save_closed_window(self, current_timestamp, current_value):
+        if self.window_open == True:
+            self.window_state_changed = True
         self.window_open = False
         self.open_min = None
         self.last_closing_time=current_timestamp
@@ -264,7 +272,8 @@ class Operator(OperatorBase):
             "window_open": self.window_open,
             "timestamp": timestamp_to_str(current_timestamp),  #todo: change return parameter for humidity rebound (including in widgets and operator!!)
             "humidity_too_fast_too_high": timestamp_to_str(current_timestamp) if humidity_rebound_detected else "",
-            "initial_phase": ""
+            "initial_phase": "",
+            "notification": utils.notify(self.notification_mode, self.window_open, self.window_state_changed)
         }
         logger.debug(answer)
         return answer

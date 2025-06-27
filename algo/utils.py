@@ -65,3 +65,17 @@ def is_summer(date:datetime):
     sum_start = 5
     sum_end = 8
     return sum_start<=date.month<=sum_end
+
+def notify(notification_mode: str, window_open: bool, window_state_changed: bool):
+    if window_state_changed:
+        if notification_mode == "all":
+            if window_open:
+             return "Window opened."
+            else:
+                return "Window closed."
+        elif notification_mode == "when_opened":
+            if window_open:
+                return "Window opened."
+        elif notification_mode == "when_closed":
+            if not window_open:
+                return "Window closed."
