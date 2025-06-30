@@ -68,7 +68,7 @@ def is_summer(date:datetime):
 
 def notify(notification_mode: str, window_open: bool, window_state_changed: bool):
     if window_state_changed:
-        if notification_mode == "all":
+        if notification_mode == "always":
             if window_open:
              return "Window opened."
             else:
