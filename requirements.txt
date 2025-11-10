@@ -11,4 +11,4 @@ pyarrow
 scikit-learn
 kneed[plot]
 python-dotenv
-numpy
+numpy==1.26.4
