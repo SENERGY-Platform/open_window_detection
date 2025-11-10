@@ -1,4 +1,4 @@
-git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v1.1.29
+git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v1.1.30-dev
 
 pandas<2
 kazoo<3
