@@ -1,14 +1,10 @@
 git+https://github.com/SENERGY-Platform/analytics-operator-lib-python@v1.1.30-dev
 
 pandas<2
-kazoo<3
-astral
-pytz
-scipy
-tqdm
-similaritymeasures
-pyarrow
-scikit-learn
-kneed[plot]
-python-dotenv
 numpy==1.26.4
+kazoo
+scikit-learn == 1.3.0
+statsmodels==0.13.5
+lightgbm==3.3.5
+darts == 0.24.0
+python-dotenv==1.0.0
