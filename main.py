@@ -16,6 +16,8 @@
 
 __all__ = ("Operator", )
 
+import typing
+
 import dotenv
 dotenv.load_dotenv()
 
@@ -24,6 +26,7 @@ from operator_lib.util.persistence import save, load
 import os
 import pandas as pd
 from numpy import nan
+import datetime
 from algo import utils
 from algo.moving_mean_feature import MovingMeanFeature
 from algo.drops_and_risings_feature import DropsAndRisingsFeature
@@ -70,8 +73,8 @@ class Operator(OperatorBase):
     configType = CustomConfig
 
     selectors = [
-        Selector({"name": "humidity", "args": ["Humidity", "Humidity_Time"]}),
-        Selector({"name": "temperature", "args": ["Temperature", "Temperature_Time"]})
+        Selector({"name": "humidity", "args": ["Humidity"]}),
+        Selector({"name": "temperature", "args": ["Temperature"]})
     ]
 
     def init(self, *args, **kwargs):
@@ -132,9 +135,9 @@ class Operator(OperatorBase):
         self.movingMean_feature.stop()
         self.unusualDrops_feature.stop()
 
-    def run(self, data, selector = None, device_id=None):
+    def run(self, data: typing.Dict[str, typing.Any], selector: str, device_id, timestamp: datetime.datetime):
         if selector == "humidity":
-            current_humid_timestamp = todatetime(data['Humidity_Time'])
+            current_humid_timestamp = pd.Timestamp(timestamp)
             current_humid_value = float(data['Humidity'])
             logger.debug('Humidity: ' + str(current_humid_value) + '  ' + 'Humidity Time: ' + timestamp_to_str(current_humid_timestamp))
 
@@ -180,7 +183,7 @@ class Operator(OperatorBase):
             return self.build_return_values(current_humid_timestamp, humidity_rebound_detected)
         
         elif selector == "temperature":
-            current_temp_timestamp = todatetime(data['Temperature_Time'])
+            current_temp_timestamp = pd.Timestamp(timestamp)
             current_temp_value = float(data['Temperature'])
             logger.debug("Temperature" + ":  " + str(current_temp_value) + '  ' + "Temperature Time: "+ timestamp_to_str(current_temp_timestamp))
             
