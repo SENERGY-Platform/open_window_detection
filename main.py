@@ -72,11 +72,6 @@ class CustomConfig(Config):
 class Operator(OperatorBase):
     configType = CustomConfig
 
-    selectors = [
-        Selector({"name": "humidity", "args": "Humidity"}),
-        Selector({"name": "temperature", "args": "Temperature"})
-    ]
-
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)
         self.data_path = self.config.data_path
