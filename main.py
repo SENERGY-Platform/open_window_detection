@@ -136,7 +136,7 @@ class Operator(OperatorBase):
         self.unusualDrops_feature.stop()
 
     def run(self, data: typing.Dict[str, typing.Any], selector: str, device_id, timestamp: datetime.datetime):
-        if selector == "humidity":
+        if "Humidity" in data.keys():
             current_humid_timestamp = pd.Timestamp(timestamp)
             current_humid_value = float(data['Humidity'])
             logger.debug('Humidity: ' + str(current_humid_value) + '  ' + 'Humidity Time: ' + timestamp_to_str(current_humid_timestamp))
@@ -182,7 +182,7 @@ class Operator(OperatorBase):
 
             return self.build_return_values(current_humid_timestamp, humidity_rebound_detected)
         
-        elif selector == "temperature":
+        elif "Temperature" in data.keys():
             current_temp_timestamp = pd.Timestamp(timestamp)
             current_temp_value = float(data['Temperature'])
             logger.debug("Temperature" + ":  " + str(current_temp_value) + '  ' + "Temperature Time: "+ timestamp_to_str(current_temp_timestamp))
