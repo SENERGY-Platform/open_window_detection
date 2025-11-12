@@ -131,6 +131,38 @@ class Operator(OperatorBase):
         self.unusualDrops_feature.stop()
 
     def run(self, data: typing.Dict[str, typing.Any], selector: str, device_id, timestamp: datetime.datetime):
+        if "Temperature" in data.keys():
+            current_temp_timestamp = pd.Timestamp(timestamp)
+            current_temp_value = float(data['Temperature'])
+            logger.debug("Temperature" + ":  " + str(current_temp_value) + '  ' + "Temperature Time: "+ timestamp_to_str(current_temp_timestamp))
+            
+            # init phase
+            if not self.first_data_time:
+                self.first_data_time = current_temp_timestamp
+                save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
+                self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+
+            # initialize last_temp_drop_time
+            if not self.unusualDrops_feature.last_temp_drop_time:
+                self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
+            
+            # collect data in init phase
+            self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, current_temp_value, current_temp_timestamp)
+
+            outcome = self.check_for_init_phase(current_temp_timestamp)
+            if outcome==False:  # init phase cuts of normal analysis, but do not return yet because there could be more information from the humidity value
+                # normal detection
+                sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
+
+                self.temp_drop_detected = False # only set to true if drops feature detected unusual temperature drop
+
+                detected, feature = self.detect(current_temp_value, current_temp_timestamp, sampled_sliding_window_temp, "temperature")
+                if detected:
+                    self.temp_drop_detected = True
+                    self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
+                    if self.humid_drop_detected:
+                        self.save_detection(current_temp_timestamp, current_temp_value, feature, nan)
+        
         if "Humidity" in data.keys():
             current_humid_timestamp = pd.Timestamp(timestamp)
             current_humid_value = float(data['Humidity'])
@@ -159,7 +191,7 @@ class Operator(OperatorBase):
                                       or (self.open_min and (current_humid_value - self.open_min>1.2)))):
                     self.save_closed_window(current_humid_timestamp, current_humid_value)
             else:
-                detected, feature = self.detect(current_humid_value, current_humid_timestamp, sampled_sliding_window_humid, selector)
+                detected, feature = self.detect(current_humid_value, current_humid_timestamp, sampled_sliding_window_humid, "humidity")
                 if detected:
                     if feature == "drops_humid":
                         self.humid_drop_detected = True
@@ -177,38 +209,7 @@ class Operator(OperatorBase):
 
             return self.build_return_values(current_humid_timestamp, humidity_rebound_detected)
         
-        elif "Temperature" in data.keys():
-            current_temp_timestamp = pd.Timestamp(timestamp)
-            current_temp_value = float(data['Temperature'])
-            logger.debug("Temperature" + ":  " + str(current_temp_value) + '  ' + "Temperature Time: "+ timestamp_to_str(current_temp_timestamp))
-            
-            # init phase
-            if not self.first_data_time:
-                self.first_data_time = current_temp_timestamp
-                save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
-                self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
-
-            # initialize last_temp_drop_time
-            if not self.unusualDrops_feature.last_temp_drop_time:
-                self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
-            
-            # collect data in init phase
-            self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, current_temp_value, current_temp_timestamp)
-
-            outcome = self.check_for_init_phase(current_temp_timestamp)
-            if outcome: return outcome  # init phase cuts of normal analysis
-
-            # normal detection
-            sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
-
-            self.temp_drop_detected = False # only set to true if drops feature detected unusual temperature drop
-
-            detected, feature = self.detect(current_temp_value, current_temp_timestamp, sampled_sliding_window_temp, selector)
-            if detected:
-                self.temp_drop_detected = True
-                self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
-                if self.humid_drop_detected:
-                    self.save_detection(current_temp_timestamp, current_temp_value, feature, nan)
+        if outcome: return outcome  # init phase cuts of normal analysis, this line is only reached if operator is in init phase and only a temperature value was sent
 
 
     def detect(self, current_value, current_timestamp, sampled_sliding_window, selector) -> (bool, str):
