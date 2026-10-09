@@ -195,7 +195,9 @@ class Operator(OperatorBase):
                 if detected:
                     if feature == "drops_humid":
                         self.humid_drop_detected = True
-                        if current_humid_timestamp - self.unusualDrops_feature.last_temp_drop_time < pd.Timedelta(20,"min"): # open window only then detected if humidity and temperature dropped unusually
+                        last_temp_drop_time = self.unusualDrops_feature.last_temp_drop_time
+                        # set by the first temperature message, which may come after the first humidity drop
+                        if last_temp_drop_time is not None and current_humid_timestamp - last_temp_drop_time < pd.Timedelta(20,"min"): # open window only then detected if humidity and temperature dropped unusually
                             self.save_detection(current_humid_timestamp, current_humid_value, feature, slope)
                     else:
                         self.save_detection(current_humid_timestamp, current_humid_value, feature, slope)
