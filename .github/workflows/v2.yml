@@ -1,17 +1,27 @@
-name: 'v2.0 build'
+name: 'v2 build'
 
+# release/v2 is the line the shared operator open_window_v2 runs. It builds :v2.x.y and,
+# as before, :v2.0; master keeps the older line. The git tag is pushed after the image,
+# so a failed build never consumes a version.
 on:
   push:
     branches:
-      - v2.0
+      - release/v2
   workflow_dispatch:
 
 jobs:
   multi:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Version
+        id: version
+        run: echo "tag=$(.github/scripts/next-version.sh "$GITHUB_REF_NAME")" >> "$GITHUB_OUTPUT"
       - name: Login to DockerHub
         uses: docker/login-action@v1
         with:
@@ -35,4 +45,12 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
+            ghcr.io/senergy-platform/open_window_detection:${{ steps.version.outputs.tag }}
             ghcr.io/senergy-platform/open_window_detection:v2.0
+      - name: Push version tag
+        run: |
+          tag='${{ steps.version.outputs.tag }}'
+          if [ -z "$(git tag --points-at HEAD --list "$tag")" ]; then
+            git tag "$tag"
+            git push origin "$tag"
+          fi
