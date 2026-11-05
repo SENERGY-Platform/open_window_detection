@@ -20,6 +20,7 @@ import tempfile
 import unittest
 
 from algo.moving_mean_feature import MovingMeanFeature
+from tests._harness import new_operator
 
 T0 = datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc)
 READINGS_PER_PERIOD = 72  # one every 5 minutes for 6 h
@@ -88,6 +89,21 @@ class TestBaselinePersistence(MovingMeanTestCase):
 
         self.assertAlmostEqual(restarted.current_mean, uninterrupted.current_mean)
         self.assertAlmostEqual(restarted.current_std, uninterrupted.current_std)
+
+
+class TestModelParameters(MovingMeanTestCase):
+    def test_exposes_its_model_parameters(self):
+        self.assertEqual(new_feature(self.data_path).model_parameters["std_ratio"], 3)
+
+    def test_falls_back_to_the_default_for_an_error_influence_outside_0_to_1(self):
+        feature = new_feature(self.data_path, {"error_influence": 2})
+
+        self.assertEqual(feature.model_parameters["error_influence"], 0.6)
+
+    def test_takes_its_parameters_from_the_operator_config(self):
+        operator, _ = new_operator(self.data_path, moving_mean_std_ratio="4")
+
+        self.assertEqual(operator.movingMean_feature.std_ratio, 4.0)
 
 
 if __name__ == "__main__":

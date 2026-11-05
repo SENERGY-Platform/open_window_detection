@@ -60,6 +60,13 @@ class CustomConfig(Config):
     init_phase_length: float = 2
     init_phase_level: str = "d"
     notification_mode: str = "never"
+    # model parameters of the moving mean feature (see MovingMeanFeature); unset ones keep its defaults
+    moving_mean_init_phase_days = None
+    moving_mean_slope_minutes = None
+    moving_mean_std_ratio = None
+    moving_mean_days = None
+    moving_mean_hours_per_period = None
+    moving_mean_error_influence = None
 
     def __init__(self, d, **kwargs):
         super().__init__(d, **kwargs)
@@ -68,9 +75,17 @@ class CustomConfig(Config):
             self.init_phase_length = float(self.init_phase_length)
         else:
             self.init_phase_length = 2
-        
+
         if self.init_phase_level == '':
             self.init_phase_level = 'd'
+
+# a function, not a CustomConfig method: simple_struct copies every public class attribute onto the instance,
+# methods included, which leaves them unbound there
+def moving_mean_parameters(config):
+    types = {'init_phase_days': float, 'slope_minutes': int, 'std_ratio': float, 'days': int,
+             'hours_per_period': int, 'error_influence': float}
+    values = {name: getattr(config, f'moving_mean_{name}') for name in types}
+    return {name: types[name](value) for name, value in values.items() if value not in (None, '')}
 
 class Operator(OperatorBase):
     configType = CustomConfig
@@ -88,14 +103,13 @@ class Operator(OperatorBase):
             LAST_TEMP_DROP_TIME_FILE
         )
 
-        mov_mean_model_parameters = None if 'moving_mean_model_parameters' not in kwargs else kwargs['moving_mean_model_parameters']
         self.movingMean_feature = MovingMeanFeature(
             self.data_path,
             MOV_MEAN_DETECTIONS_FILENAME,
             MOV_MEAN_POINT_COUNT_FILENAME,
             MOV_MEAN_PENDING_POSITIVE_FILENAME,
             MOV_MEAN_WAITING_FOR_RESET_FILENAME,
-            model_parameters=mov_mean_model_parameters
+            model_parameters=moving_mean_parameters(self.config) or None
         )
 
         self.first_data_time = load(self.data_path, FIRST_DATA_FILENAME)

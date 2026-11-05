@@ -123,7 +123,7 @@ class MovingMeanFeature:
 
     @property
     def model_parameters(self):
-        return self.model_parameters
+        return self._model_parameters
 
     @property
     def detections(self):
@@ -193,7 +193,7 @@ class MovingMeanFeature:
 
     def __update_parameters(self, defaults, updates):
         def log_day_hour_warning(day, hour):
-            logger.warn(
+            logger.warning(
                 f"Invalid parameter combination found: the amount of hours in 'days' ({day}) must be evenly divisible by 'hours_per_period' ({hour})! "
                 f"Continuing with default values: days={defaults['days']}, hours_per_period={defaults['hours_per_period']}")
 
@@ -215,7 +215,7 @@ class MovingMeanFeature:
                     add = False
 
             if parameter == 'error_influence' and not (0<=value<=1):
-                logger.warn(f"Parameter 'error_influence' ({updates.items['error_influence']}) must be between 0 and 1! "
+                logger.warning(f"Parameter 'error_influence' ({value}) must be between 0 and 1! "
                         f"Continuing with default values: error_influence={defaults['error_influence']}")
                 add = False
 
