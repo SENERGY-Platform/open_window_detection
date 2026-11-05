@@ -128,6 +128,35 @@ class TestNotification(unittest.TestCase):
         self.assertEqual(len([o for _, o in outputs if o.get("notification")]), len(changes))
 
 
+class TestHeldReadings(unittest.TestCase):
+    def setUp(self):
+        data_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(data_dir.cleanup)
+        self.data_path = data_dir.name
+
+    def run_message(self, operator, data, minute):
+        return operator.run(data=data, selector=None, device_id="device:1", timestamp=at(minute))
+
+    def test_a_temperature_message_reports_the_window_state(self):
+        operator, _ = new_operator(self.data_path)
+        self.run_message(operator, {"Temperature": 21.0, "Humidity": 50.0}, 0)
+
+        output = self.run_message(operator, {"Temperature": 21.1}, 1)
+
+        self.assertEqual(set(output), set(Operator.outputs.names()))
+        self.assertEqual(len(operator.sliding_window_ah), 2, "evaluated on the humidity of minute 0")
+
+    def test_a_humidity_reading_older_than_its_limit_is_not_used(self):
+        operator, _ = new_operator(self.data_path, max_humidity_age_minutes="5")
+        self.run_message(operator, {"Temperature": 21.0, "Humidity": 50.0}, 0)
+
+        with self.assertLogs("operator", level="WARNING") as logs:
+            self.run_message(operator, {"Temperature": 21.1}, 10)
+
+        self.assertEqual(len(operator.sliding_window_ah), 1)
+        self.assertTrue(any("no Humidity reading" in line for line in logs.output))
+
+
 class TestManifest(unittest.TestCase):
     def test_declares_the_inputs(self):
         self.assertEqual(build_manifest(Operator)["inputs"],

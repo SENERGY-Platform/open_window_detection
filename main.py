@@ -55,10 +55,10 @@ SLIDING_WINDOW_TEMP_FILENAME = "sliding_window_temp.pickle"
 READING_RANGES = {"Temperature": (-40.0, 85.0), "Humidity": (0.0, 100.0)}
 
 # detection thresholds of CustomConfig, see the README
-THRESHOLDS = ("max_temperature_age_minutes", "ah_drop_min", "ah_drop_std_factor", "ah_falling_slope",
-              "ah_extreme_drop", "temperature_confirm_drop", "temperature_confirm_minutes", "temperature_strong_drop",
-              "temperature_strong_drop_minutes", "close_temperature_rise", "close_temperature_slope", "close_ah_rise",
-              "max_open_minutes", "rebound_humidity", "rebound_minutes")
+THRESHOLDS = ("max_temperature_age_minutes", "max_humidity_age_minutes", "ah_drop_min", "ah_drop_std_factor",
+              "ah_falling_slope", "ah_extreme_drop", "temperature_confirm_drop", "temperature_confirm_minutes",
+              "temperature_strong_drop", "temperature_strong_drop_minutes", "close_temperature_rise",
+              "close_temperature_slope", "close_ah_rise", "max_open_minutes", "rebound_humidity", "rebound_minutes")
 
 from operator_lib.util import Config, Inputs, Outputs
 # the types declare the operator's interface for its manifest; the values still arrive as strings and are cast below
@@ -78,7 +78,10 @@ class CustomConfig(Config):
     moving_mean_error_influence: float = None
     moving_mean_reset_slope: float = None
     # detection thresholds; humidity in absolute humidity (g/m³), temperature in K
-    max_temperature_age_minutes: float = 10.0      # older temperature readings give no absolute humidity
+    # a reading holds until the next one, as with a sensor that reports on change and at least hourly; older ones
+    # count as missing
+    max_temperature_age_minutes: float = 90.0
+    max_humidity_age_minutes: float = 90.0
     ah_drop_min: float = 0.4                       # drop of the last 5 minutes below the hour before
     ah_drop_std_factor: float = 1.0                # the same drop, in units of the hour's noise
     ah_falling_slope: float = 0.02                 # per minute over the last 10 minutes ...
@@ -194,6 +197,7 @@ class Operator(OperatorBase):
         self.open_temperature_min = window_state.get("open_temperature_min")  # lowest smoothed temperature while open
         self.temperature_before_opening = window_state.get("temperature_before_opening")
         self.pending_drop = window_state.get("pending_drop")  # a humidity drop the temperature has not confirmed yet
+        self.latest_humidity = window_state.get("latest_humidity")  # {"timestamp", "value"} of the last reading
         self.window_closing_times = load(self.data_path, WINDOW_CLOSING_FILENAME, [])
         self.detections = load(self.data_path, ALL_DETECTIONS_FILENAME, [])
 
@@ -205,7 +209,7 @@ class Operator(OperatorBase):
 
         self.notification_mode = self.config.notification_mode
         self.window_state_changed = False
-        self.missing_temperature_reported = False
+        self.missing_reported = set()  # inputs whose absence is logged already
         self.history_end = {}  # per input, the time of the last reading replayed from the history
 
         # nothing to continue from: a fresh deployment, or the first start of this version
@@ -261,32 +265,23 @@ class Operator(OperatorBase):
         if not data:
             return None
 
-        outcome = None
-        if "Temperature" in data.keys():
-            outcome = self.handle_temperature(current_timestamp, data['Temperature'])
-        if "Humidity" in data.keys():
-            outcome = self.handle_humidity(current_timestamp, data['Humidity'])
-        return outcome
-
-    def handle_temperature(self, current_timestamp, temperature):
-        logger.debug("Temperature" + ":  " + str(temperature) + '  ' + "Temperature Time: "+ timestamp_to_str(current_timestamp))
         self.record_first_data_time(current_timestamp)
-        self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, temperature, current_timestamp)
-        # the window state is decided with each humidity reading, which also carries the output
-        return self.check_for_init_phase(current_timestamp) or None
+        if "Temperature" in data:
+            self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, data["Temperature"], current_timestamp)
+        if "Humidity" in data:
+            self.latest_humidity = {"timestamp": current_timestamp, "value": data["Humidity"]}
+        logger.debug(f"{timestamp_to_str(current_timestamp)}: {data}")
+        return self.evaluate(current_timestamp)
 
-    def handle_humidity(self, current_timestamp, humidity):
-        logger.debug('Humidity: ' + str(humidity) + '  ' + 'Humidity Time: ' + timestamp_to_str(current_timestamp))
-        self.record_first_data_time(current_timestamp)
-
-        temperature = self.latest_temperature(current_timestamp)
-        if temperature is None:
-            if not self.missing_temperature_reported:
-                logger.warning(f"no temperature reading in the last {self.config.max_temperature_age_minutes:g} minutes: "
-                               "without it there is no absolute humidity and no detection")
-                self.missing_temperature_reported = True
+    def evaluate(self, current_timestamp):
+        """Decides the window state with every message, temperature or humidity, on the last reading of each input.
+        A sensor that reports on change stays silent while its value holds, and while a window is open the relative
+        humidity often does, because the falling temperature makes up for the falling water content."""
+        temperature = self.held_reading("Temperature", self.sliding_window_temp[-1] if self.sliding_window_temp else None,
+                                        self.config.max_temperature_age_minutes, current_timestamp)
+        humidity = self.held_reading("Humidity", self.latest_humidity, self.config.max_humidity_age_minutes, current_timestamp)
+        if temperature is None or humidity is None:
             return self.check_for_init_phase(current_timestamp) or self.build_return_values(current_timestamp, False)
-        self.missing_temperature_reported = False
         absolute_humidity = utils.absolute_humidity(temperature, humidity)
 
         # collect data in init phase
@@ -315,6 +310,19 @@ class Operator(OperatorBase):
 
         return self.build_return_values(current_timestamp, humidity_rebound_detected)
 
+    def held_reading(self, name, reading, max_age_minutes, current_timestamp):
+        """The value of the reading if it is at most max_age_minutes old, else None. The absence is logged once,
+        and only once the input had that long to arrive since the first data."""
+        max_age = pd.Timedelta(max_age_minutes, "min")
+        if reading is not None and abs(current_timestamp - reading["timestamp"]) <= max_age:
+            self.missing_reported.discard(name)
+            return reading["value"]
+        if name not in self.missing_reported and current_timestamp - self.first_data_time > max_age:
+            logger.warning(f"no {name} reading in the last {max_age_minutes:g} minutes: without temperature and "
+                           "humidity there is no absolute humidity and no detection")
+            self.missing_reported.add(name)
+        return None
+
     def drop_invalid_readings(self, data):
         readings = {}
         for key, (low, high) in READING_RANGES.items():
@@ -336,14 +344,6 @@ class Operator(OperatorBase):
             self.first_data_time = current_timestamp
             save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
             self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
-
-    def latest_temperature(self, current_timestamp):
-        if not self.sliding_window_temp:
-            return None
-        latest = self.sliding_window_temp[-1]
-        if abs(current_timestamp - latest["timestamp"]) > pd.Timedelta(self.config.max_temperature_age_minutes, "min"):
-            return None
-        return latest["value"]
 
     def detect(self, current_timestamp, absolute_humidity, sampled_sliding_window_ah, sampled_sliding_window_temp) -> typing.Optional[str]:
         """The feature that detects an open window now, or None."""
@@ -429,6 +429,7 @@ class Operator(OperatorBase):
             "open_temperature_min": self.open_temperature_min,
             "temperature_before_opening": self.temperature_before_opening,
             "pending_drop": self.pending_drop,
+            "latest_humidity": self.latest_humidity,
         })
 
     def check_for_init_phase(self, current_timestamp):

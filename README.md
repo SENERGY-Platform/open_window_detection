@@ -42,8 +42,11 @@ operator logs a warning and starts without history. A restart continues from the
 | `Temperature` | float | Room temperature in °C         |
 | `Humidity`    | float | Relative humidity in percent   |
 
-Both are required: without a temperature reading from the last `max_temperature_age_minutes`, the operator reports the
-window state but detects nothing. They may come in one message or in separate ones. Missing, non-numeric and
+Both are required. They may come in one message or in separate ones, at fixed intervals or on change: the operator
+decides with every message, on the last reading of each input. That matters for a humidity sensor that reports on
+change, because while a window is open the relative humidity often hardly changes: the falling temperature makes up
+for the falling water content. A reading older than `max_temperature_age_minutes` or `max_humidity_age_minutes` counts
+as missing; then the operator logs a warning, reports the window state and detects nothing. Missing, non-numeric and
 out-of-range readings are logged and skipped.
 
 ## Output
@@ -56,7 +59,7 @@ out-of-range readings are logged and skipped.
 | `initial_phase`              | string  | Message whether and how long the operator is in its initialization phase            |
 | `notification`               | string  | `Window opened.` or `Window closed.` once per change, as `notification_mode` selects |
 
-There is one output per humidity reading; temperature readings produce none outside the initialization phase.
+There is one output per message.
 
 ## Config options
 
@@ -74,7 +77,8 @@ All optional; humidity values are absolute humidity in g/m³, temperatures in K.
 
 | key                               | default | description                                                                       |
 |-----------------------------------|---------|-----------------------------------------------------------------------------------|
-| `max_temperature_age_minutes`     | 10      | Older temperature readings are not used to compute absolute humidity              |
+| `max_temperature_age_minutes`     | 90      | Older temperature readings count as missing; 90 covers sensors reporting hourly    |
+| `max_humidity_age_minutes`        | 90      | Older humidity readings count as missing                                           |
 | `ah_drop_min`                     | 0.4     | Drop of the last 5 minutes below the median of the hour before                    |
 | `ah_drop_std_factor`              | 1       | The same drop in units of the hour's noise around its trend                        |
 | `ah_falling_slope`                | 0.02    | Fall per minute over the last 10 minutes, or ...                                   |

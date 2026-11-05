@@ -24,6 +24,22 @@ from tests._room import Room
 OPEN_AT = 120
 
 
+def feed_humidity_on_change(operator, readings, step=2.0, heartbeat=60):
+    """Sends the temperature every minute and the humidity only on a change of at least step % or after heartbeat
+    minutes, as a sensor that reports on change. Returns (minute, output) for every message with an output."""
+    outputs, last = [], None
+    for minute, temperature, humidity in readings:
+        messages = [({"Temperature": temperature}, at(minute))]
+        if last is None or abs(humidity - last[1]) >= step - 1e-9 or minute - last[0] >= heartbeat:
+            messages.append(({"Humidity": humidity}, at(minute, 20)))
+            last = (minute, humidity)
+        for data, timestamp in messages:
+            result = operator.run(data=data, selector=None, device_id="device:1", timestamp=timestamp)
+            if result:
+                outputs.append((minute, result))
+    return outputs
+
+
 class DetectionTestCase(unittest.TestCase):
     def setUp(self):
         data_dir = tempfile.TemporaryDirectory()
@@ -125,6 +141,28 @@ class TestMildWeatherAiring(DetectionTestCase):
         minute, is_open = transitions(outputs)[0]
         self.assertTrue(is_open)
         self.assertLessEqual(minute, OPEN_AT + 15)
+
+
+class TestHumiditySensorReportingOnChange(DetectionTestCase):
+    """The humidity sensor reports on a change of 2 %. While the window is open the relative humidity hardly changes,
+    because the falling temperature makes up for the falling water content, so it stays silent."""
+
+    def test_reports_the_window_closed_within_10_minutes_of_closing(self):
+        outputs = feed_humidity_on_change(self.operator, Room(0, 80, tau_temperature_open=30).readings(
+            300, openings=[(OPEN_AT, 10)]))
+
+        minute, is_open = transitions(outputs)[-1]
+        self.assertFalse(is_open)
+        self.assertGreaterEqual(minute, OPEN_AT + 10)
+        self.assertLessEqual(minute, OPEN_AT + 10 + 10)
+
+    def test_detects_the_opening_in_mild_weather(self):
+        outputs = feed_humidity_on_change(self.operator, Room(10, 80, tau_temperature_open=30).readings(
+            300, openings=[(OPEN_AT, 10)]))
+
+        minute, is_open = transitions(outputs)[0]
+        self.assertTrue(is_open)
+        self.assertLessEqual(minute, OPEN_AT + 5)
 
 
 class TestNoAiring(DetectionTestCase):

@@ -85,6 +85,10 @@
       "type": "float"
     },
     {
+      "name": "max_humidity_age_minutes",
+      "type": "float"
+    },
+    {
       "name": "ah_drop_min",
       "type": "float"
     },

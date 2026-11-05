@@ -102,8 +102,8 @@ class TestHistoryInputs(unittest.TestCase):
 
         operator = self.start([frame])
 
-        minute, _, _ = self.readings[-3]
-        self.assertEqual(operator.sliding_window_ah[-1]["timestamp"], at(minute))
+        minute, _, humidity = self.readings[-3]
+        self.assertEqual(operator.latest_humidity, {"timestamp": at(minute), "value": humidity})
 
 
 class TestUpdate(unittest.TestCase):
@@ -156,14 +156,15 @@ class TestNotificationAfterHistory(unittest.TestCase):
 class TestWithoutHistory(unittest.TestCase):
     def test_starts_without_history_when_no_timescale_is_configured(self):
         reader = mock.Mock(side_effect=MissingConfigValueError("cannot read history"))
+        readings = Room(0, 80).readings(10)
 
         with self.assertLogs("operator", level="WARNING") as logs:
             operator, _ = new_operator(temporary_directory(self), history_reader=reader)
-        outputs = feed(operator, Room(0, 80).readings(10))
+        outputs = feed(operator, readings)
 
         self.assertTrue(any("without history" in line for line in logs.output))
-        reports = [output for _, output in outputs if "notification" in output]
-        self.assertEqual(len(reports), 10, "one report per humidity reading, as without history")
+        without_history, _ = new_operator(temporary_directory(self))
+        self.assertEqual(outputs, feed(without_history, readings))
 
     def test_reads_no_history_after_a_restart(self):
         data_path = temporary_directory(self)
