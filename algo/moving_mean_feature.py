@@ -282,9 +282,12 @@ class MovingMeanFeature:
                 weights = np.arange(1, n_periods + 1, dtype=np.float64) # linear weights for window of periods
                 weights /= weights.sum()  # Normalize to sum to 1
 
-                # Weighted mean and standard deviation
-                self._current_mean = np.average(self._period_vals_last_n_days['mean'], weights=weights)
-                self._current_std = np.average(self._period_vals_last_n_days['std'], weights=weights)
+                # Weighted mean and pooled standard deviation: each period's own variance plus how far its mean
+                # lies from the overall mean, so the daily cycle between periods counts towards the spread
+                period_means = np.array(self._period_vals_last_n_days['mean'])
+                period_stds = np.array(self._period_vals_last_n_days['std'])
+                self._current_mean = np.average(period_means, weights=weights)
+                self._current_std = np.sqrt(np.average(period_stds ** 2 + (period_means - self._current_mean) ** 2, weights=weights))
                 self._mean_count_per_period = np.mean(self._period_vals_last_n_days['point_count'])
                 self._std_count_per_period = np.std(self._period_vals_last_n_days['point_count'])
 
