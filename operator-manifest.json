@@ -1,0 +1,144 @@
+{
+  "inputs": [
+    {
+      "name": "Temperature",
+      "type": "float"
+    },
+    {
+      "name": "Humidity",
+      "type": "float"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "window_open",
+      "type": "bool"
+    },
+    {
+      "name": "timestamp",
+      "type": "string"
+    },
+    {
+      "name": "humidity_too_fast_too_high",
+      "type": "string"
+    },
+    {
+      "name": "initial_phase",
+      "type": "string"
+    },
+    {
+      "name": "notification",
+      "type": "string"
+    }
+  ],
+  "config_values": [
+    {
+      "name": "data_path",
+      "type": "string"
+    },
+    {
+      "name": "init_phase_length",
+      "type": "float"
+    },
+    {
+      "name": "init_phase_level",
+      "type": "string"
+    },
+    {
+      "name": "notification_mode",
+      "type": "string"
+    },
+    {
+      "name": "logger_level",
+      "type": "string"
+    },
+    {
+      "name": "moving_mean_init_phase_days",
+      "type": "float"
+    },
+    {
+      "name": "moving_mean_slope_minutes",
+      "type": "int"
+    },
+    {
+      "name": "moving_mean_std_ratio",
+      "type": "float"
+    },
+    {
+      "name": "moving_mean_days",
+      "type": "int"
+    },
+    {
+      "name": "moving_mean_hours_per_period",
+      "type": "int"
+    },
+    {
+      "name": "moving_mean_error_influence",
+      "type": "float"
+    },
+    {
+      "name": "moving_mean_reset_slope",
+      "type": "float"
+    },
+    {
+      "name": "max_temperature_age_minutes",
+      "type": "float"
+    },
+    {
+      "name": "ah_drop_min",
+      "type": "float"
+    },
+    {
+      "name": "ah_drop_std_factor",
+      "type": "float"
+    },
+    {
+      "name": "ah_falling_slope",
+      "type": "float"
+    },
+    {
+      "name": "ah_extreme_drop",
+      "type": "float"
+    },
+    {
+      "name": "temperature_confirm_drop",
+      "type": "float"
+    },
+    {
+      "name": "temperature_confirm_minutes",
+      "type": "float"
+    },
+    {
+      "name": "temperature_strong_drop",
+      "type": "float"
+    },
+    {
+      "name": "temperature_strong_drop_minutes",
+      "type": "float"
+    },
+    {
+      "name": "close_temperature_rise",
+      "type": "float"
+    },
+    {
+      "name": "close_temperature_slope",
+      "type": "float"
+    },
+    {
+      "name": "close_ah_rise",
+      "type": "float"
+    },
+    {
+      "name": "max_open_minutes",
+      "type": "float"
+    },
+    {
+      "name": "rebound_humidity",
+      "type": "float"
+    },
+    {
+      "name": "rebound_minutes",
+      "type": "float"
+    }
+  ]
+}

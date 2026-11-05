@@ -60,36 +60,39 @@ THRESHOLDS = ("max_temperature_age_minutes", "ah_drop_min", "ah_drop_std_factor"
               "temperature_strong_drop_minutes", "close_temperature_rise", "close_temperature_slope", "close_ah_rise",
               "max_open_minutes", "rebound_humidity", "rebound_minutes")
 
-from operator_lib.util import Config
+from operator_lib.util import Config, Inputs, Outputs
+# the types declare the operator's interface for its manifest; the values still arrive as strings and are cast below
 class CustomConfig(Config):
-    data_path = "/opt/data"
+    data_path: str = "/opt/data"
     init_phase_length: float = 2
     init_phase_level: str = "d"
     notification_mode: str = "never"
+    # a field of the operator lib, declared again so that flows can set it
+    logger_level: str = "warning"
     # model parameters of the moving mean feature (see MovingMeanFeature); unset ones keep its defaults
-    moving_mean_init_phase_days = None
-    moving_mean_slope_minutes = None
-    moving_mean_std_ratio = None
-    moving_mean_days = None
-    moving_mean_hours_per_period = None
-    moving_mean_error_influence = None
-    moving_mean_reset_slope = None
+    moving_mean_init_phase_days: float = None
+    moving_mean_slope_minutes: int = None
+    moving_mean_std_ratio: float = None
+    moving_mean_days: int = None
+    moving_mean_hours_per_period: int = None
+    moving_mean_error_influence: float = None
+    moving_mean_reset_slope: float = None
     # detection thresholds; humidity in absolute humidity (g/m³), temperature in K
-    max_temperature_age_minutes = 10.0      # older temperature readings give no absolute humidity
-    ah_drop_min = 0.4                       # drop of the last 5 minutes below the hour before
-    ah_drop_std_factor = 1.0                # the same drop, in units of the hour's noise
-    ah_falling_slope = 0.02                 # per minute over the last 10 minutes ...
-    ah_extreme_drop = 0.9                   # ... or between two readings
-    temperature_confirm_drop = 0.3          # below the temperature before a humidity drop ...
-    temperature_confirm_minutes = 20.0      # ... within this many minutes of it
-    temperature_strong_drop = 1.5           # a temperature drop that opens the window on its own ...
-    temperature_strong_drop_minutes = 15.0  # ... within this many minutes
-    close_temperature_rise = 0.3            # above the lowest temperature while open: the room no longer cools
-    close_temperature_slope = 0.05          # per minute over 10 minutes: heating brings the room back
-    close_ah_rise = 0.3                     # above the lowest humidity while open
-    max_open_minutes = 0.0                  # after this the window counts as closed; 0: no limit
-    rebound_humidity = 65.0                 # % relative humidity at the temperature before opening ...
-    rebound_minutes = 30.0                  # ... within this many minutes after closing
+    max_temperature_age_minutes: float = 10.0      # older temperature readings give no absolute humidity
+    ah_drop_min: float = 0.4                       # drop of the last 5 minutes below the hour before
+    ah_drop_std_factor: float = 1.0                # the same drop, in units of the hour's noise
+    ah_falling_slope: float = 0.02                 # per minute over the last 10 minutes ...
+    ah_extreme_drop: float = 0.9                   # ... or between two readings
+    temperature_confirm_drop: float = 0.3          # below the temperature before a humidity drop ...
+    temperature_confirm_minutes: float = 20.0      # ... within this many minutes of it
+    temperature_strong_drop: float = 1.5           # a temperature drop that opens the window on its own ...
+    temperature_strong_drop_minutes: float = 15.0  # ... within this many minutes
+    close_temperature_rise: float = 0.3            # above the lowest temperature while open: the room no longer cools
+    close_temperature_slope: float = 0.05          # per minute over 10 minutes: heating brings the room back
+    close_ah_rise: float = 0.3                     # above the lowest humidity while open
+    max_open_minutes: float = 0.0                  # after this the window counts as closed; 0: no limit
+    rebound_humidity: float = 65.0                 # % relative humidity at the temperature before opening ...
+    rebound_minutes: float = 30.0                  # ... within this many minutes after closing
 
     def __init__(self, d, **kwargs):
         super().__init__(d, **kwargs)
@@ -132,6 +135,19 @@ def history_readings(frames):
     readings.sort(key=lambda reading: reading[0])
     return readings
 
+class OpenWindowInputs(Inputs):
+    Temperature: float  # °C
+    Humidity: float     # % relative humidity
+
+
+class OpenWindowOutputs(Outputs):
+    window_open: bool
+    timestamp: str
+    humidity_too_fast_too_high: str
+    initial_phase: str
+    notification: str
+
+
 class Operator(OperatorBase):
     """Detects open windows from a room's temperature and relative humidity.
 
@@ -140,6 +156,8 @@ class Operator(OperatorBase):
     on the temperature: humidity falls within minutes, the temperature follows more slowly and confirms.
     """
     configType = CustomConfig
+    inputs = OpenWindowInputs
+    outputs = OpenWindowOutputs
 
     def init(self, *args, **kwargs):
         super().init(*args, **kwargs)

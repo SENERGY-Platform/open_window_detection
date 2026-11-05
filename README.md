@@ -115,3 +115,10 @@ Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; change th
 uv sync
 uv run python -m unittest discover -s tests -t .
 ```
+
+`operator-manifest.json` declares the inputs, outputs and config values the platform registers for a version. It is
+generated from the declarations in `main.py`, and the release workflow regenerates it before each version:
+
+```bash
+uv run python -m operator_lib manifest main.py
+```

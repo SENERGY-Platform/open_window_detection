@@ -19,6 +19,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from operator_lib.manifest import build_manifest
 from operator_lib.util import OperatorConfig, create_filter_handler
 
 import main
@@ -125,6 +126,28 @@ class TestNotification(unittest.TestCase):
         changes = transitions(outputs)
         self.assertTrue(changes, "the scenario must open the window at least once")
         self.assertEqual(len([o for _, o in outputs if o.get("notification")]), len(changes))
+
+
+class TestManifest(unittest.TestCase):
+    def test_declares_the_inputs(self):
+        self.assertEqual(build_manifest(Operator)["inputs"],
+                         [{"name": "Temperature", "type": "float"}, {"name": "Humidity", "type": "float"}])
+
+    def test_declares_every_output_the_operator_returns(self):
+        data_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(data_dir.cleanup)
+        operator, _ = new_operator(data_dir.name)
+
+        outputs = feed(operator, Room(0, 80).readings(5))
+
+        returned = {key for _, output in outputs for key in output}
+        self.assertEqual(returned, set(Operator.outputs.names()))
+
+    def test_declares_every_config_field_and_the_logger_level(self):
+        declared = [entry["name"] for entry in build_manifest(Operator)["config_values"]]
+
+        self.assertEqual(set(declared), set(vars(CustomConfig)["_own_fields"]))
+        self.assertIn("logger_level", declared)
 
 
 if __name__ == "__main__":
