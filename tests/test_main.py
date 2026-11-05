@@ -17,11 +17,13 @@
 import datetime
 import tempfile
 import unittest
+from unittest import mock
 
 from operator_lib.util import OperatorConfig, create_filter_handler
 
+import main
 from main import CustomConfig, Operator
-from tests._harness import MockKafkaProducer, at, feed, new_operator, transitions
+from tests._harness import MockKafkaProducer, at, feed, new_operator, no_history, transitions
 from tests._room import Room
 
 OPERATOR_CONFIG = {
@@ -46,15 +48,16 @@ class TestRunPath(unittest.TestCase):
         self.addCleanup(data_dir.cleanup)
         opr_config = OperatorConfig(OPERATOR_CONFIG)
         operator = Operator()
-        operator.init(
-            kafka_consumer=None,
-            kafka_producer=MockKafkaProducer(),
-            filter_handler=create_filter_handler(opr_config.inputTopics, "pipeline:1", Operator.selectors),
-            output_topic="output",
-            pipeline_id="pipeline:1",
-            operator_id="operator:1",
-            config=CustomConfig({"data_path": data_dir.name}),
-        )
+        with mock.patch.object(main, "provide_historic_frames_local", no_history):
+            operator.init(
+                kafka_consumer=None,
+                kafka_producer=MockKafkaProducer(),
+                filter_handler=create_filter_handler(opr_config.inputTopics, "pipeline:1", Operator.selectors),
+                output_topic="output",
+                pipeline_id="pipeline:1",
+                operator_id="operator:1",
+                config=CustomConfig({"data_path": data_dir.name}),
+            )
         message = {"device_id": "device:1", "service_id": "climate:service",
                    "value": {"temperature": 21.0, "humidity": 50.0}}
 

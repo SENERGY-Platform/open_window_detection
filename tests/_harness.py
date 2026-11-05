@@ -15,9 +15,11 @@
 """
 
 import json
+from unittest import mock
 
 import pandas as pd
 
+import main
 from main import CustomConfig, Operator
 
 T0 = pd.Timestamp("2026-01-15T08:00:00Z")
@@ -31,20 +33,36 @@ class MockKafkaProducer:
         self.messages.append(json.loads(value))
 
 
-def new_operator(data_path, **config):
-    """An operator set up the way OperatorLib does it, keeping its state in data_path."""
+def no_history(duration):
+    return []
+
+
+def new_operator(data_path, history_reader=no_history, **config):
+    """An operator set up the way OperatorLib does it, keeping its state in data_path. history_reader stands in for
+    the operator lib's reader of the Timescale history; by default there is none."""
     producer = MockKafkaProducer()
     operator = Operator()
-    operator.init(
-        kafka_consumer=None,
-        kafka_producer=producer,
-        filter_handler=None,
-        output_topic="output",
-        pipeline_id="pipeline:1",
-        operator_id="operator:1",
-        config=CustomConfig({"data_path": data_path, "init_phase_length": "0", "init_phase_level": "min", **config}),
-    )
+    with mock.patch.object(main, "provide_historic_frames_local", history_reader):
+        operator.init(
+            kafka_consumer=None,
+            kafka_producer=producer,
+            filter_handler=None,
+            output_topic="output",
+            pipeline_id="pipeline:1",
+            operator_id="operator:1",
+            config=CustomConfig({"data_path": data_path, "init_phase_length": "0", "init_phase_level": "min", **config}),
+        )
     return operator, producer
+
+
+def history_frame(readings, inputs=("Temperature", "Humidity")):
+    """readings as the Timescale history of a topic with the given inputs, one row per minute, with the UTC-naive
+    times the database reader returns."""
+    columns = {"Temperature": 1, "Humidity": 2}
+    return pd.DataFrame({
+        "time": [pd.Timestamp(at(minute)).tz_localize(None) for minute, _, _ in readings],
+        **{name: [reading[columns[name]] for reading in readings] for name in inputs},
+    })
 
 
 def at(minute, seconds=0):

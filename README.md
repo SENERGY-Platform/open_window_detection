@@ -22,6 +22,19 @@ temperature:
 
 Every reading is evaluated at the time Kafka stored the message.
 
+## Start from history
+
+A fresh deployment, or the first start of this version, has nothing to continue from. It then reads the history of its
+inputs from Timescale, as long as the initialization phase plus one hour, and runs it through the detection at the
+times Timescale stored the readings, without sending outputs. So it starts with the short-term windows, the long-term
+baseline and the initialization phase it would have had running that long; with a complete history, the
+initialization phase is over at the start. Kafka messages up to the end of that history are skipped, they are part of
+it already.
+
+The history is read with the database connection the platform gives a deployed operator (`TS_CONN`, or `ts_conn` in
+the operator config). Without one, or for an input only Kafka has, such as the output of another operator, the
+operator logs a warning and starts without history. A restart continues from the saved state and reads no history.
+
 ## Input
 
 | key           | type  | description                    |
@@ -51,7 +64,7 @@ There is one output per humidity reading; temperature readings produce none outs
 |---------------------|--------|-----------------------------------------------------------------------------------------------------|----------|
 | `logger_level`      | string | `info`, `warning` (default), `error`, `critical`, `debug`                                           | no       |
 | `data_path`         | string | Path to the mounted volume                                                                          | no       |
-| `init_phase_length` | number | Length of the initialization phase (default: 2)                                                     | no       |
+| `init_phase_length` | number | Length of the initialization phase (default: 2), and of the history read at the start, plus 1 hour  | no       |
 | `init_phase_level`  | string | Unit of the initialization phase length (pandas timedelta string, e.g. `d` for days)                | no       |
 | `notification_mode` | string | `never` (default), `always`, `when_opened`, `when_closed`                                           | no       |
 

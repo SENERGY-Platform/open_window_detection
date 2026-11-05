@@ -22,6 +22,7 @@ import dotenv
 dotenv.load_dotenv()
 
 from operator_lib.util import OperatorBase, logger, InitPhase, timestamp_to_str, Selector
+from operator_lib.util.helpers import provide_historic_frames_local
 from operator_lib.util.persistence import save, load
 import os
 import pandas as pd
@@ -114,6 +115,23 @@ def moving_mean_parameters(config):
     values = {name: getattr(config, f'moving_mean_{name}') for name in types}
     return {name: types[name](value) for name, value in values.items() if value not in (None, '')}
 
+def history_readings(frames):
+    """(timestamp, readings) of every row of the history frames, one frame per input topic, in time order. A row
+    of a topic that carries both inputs came as one message, and is replayed as one."""
+    readings = []
+    for frame in frames:
+        inputs = [key for key in READING_RANGES if key in frame.columns]
+        if "time" not in frame.columns or not inputs:
+            continue
+        # UTC-naive from the database, UTC-aware from timescale-wrapper
+        times = pd.to_datetime(frame["time"], utc=True)
+        for timestamp, values in zip(times, frame[inputs].itertuples(index=False)):
+            data = {key: value for key, value in zip(inputs, values) if pd.notna(value)}
+            if data and pd.notna(timestamp):
+                readings.append((timestamp, data))
+    readings.sort(key=lambda reading: reading[0])
+    return readings
+
 class Operator(OperatorBase):
     """Detects open windows from a room's temperature and relative humidity.
 
@@ -166,18 +184,50 @@ class Operator(OperatorBase):
         # before the first reading the end of the init phase can only be estimated from now;
         # run() replaces the handler once the first reading arrives
         self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time or now, self.produce)
+
+        self.notification_mode = self.config.notification_mode
+        self.window_state_changed = False
+        self.missing_temperature_reported = False
+        self.history_end = {}  # per input, the time of the last reading replayed from the history
+
+        # nothing to continue from: a fresh deployment, or the first start of this version
+        if not self.sliding_window_ah and not self.movingMean_feature.started:
+            self.replay_history()
+
         value = {
             "window_open": False,
             "timestamp": timestamp_to_str(now)
         }
         self.init_phase_handler.send_first_init_msg(value)
 
-        self.notification_mode = self.config.notification_mode
-        self.window_state_changed = False
-        self.missing_temperature_reported = False
+    def replay_history(self):
+        """Runs the Timescale history of the inputs through the detection, at the times Timescale stored them, so
+        the operator starts with the windows, the baseline and the init phase it would have had running that long.
+        It reads the init phase and the hour of the short-term windows on top, so that the init phase is over at the
+        start if the history is complete. The outputs of the replay are not sent, nor the notifications they carry."""
+        duration = self.init_phase_duration + pd.Timedelta(1, "h")
+        try:
+            readings = history_readings(provide_historic_frames_local(duration.to_pytimedelta()))
+        except Exception as ex:  # no Timescale configured, an input only Kafka has, or the database is unreachable
+            logger.warning(f"starting without history: {type(ex).__name__}: {ex}")
+            return
+        if not readings:
+            logger.info("starting without history: there is none")
+            return
+
+        self.sliding_window_temp = []  # left by a former version, it ends after the history starts
+        for timestamp, data in readings:
+            self.run(data, selector=None, device_id=None, timestamp=timestamp)
+            for key in data:
+                self.history_end[key] = timestamp
+        self.save_state()
+        logger.info(f"replayed {len(readings)} readings from {readings[0][0]} to {readings[-1][0]}")
 
     def stop(self):
         super().stop()
+        self.save_state()
+
+    def save_state(self):
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
         save(self.data_path, WINDOW_CLOSING_FILENAME, self.window_closing_times)
         save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
@@ -188,11 +238,11 @@ class Operator(OperatorBase):
         self.unusualDrops_feature.stop()
 
     def run(self, data: typing.Dict[str, typing.Any], selector: str, device_id, timestamp: datetime.datetime):
-        data = self.drop_invalid_readings(data)
+        current_timestamp = pd.Timestamp(timestamp)
+        data = self.drop_replayed_readings(self.drop_invalid_readings(data), current_timestamp)
         if not data:
             return None
 
-        current_timestamp = pd.Timestamp(timestamp)
         outcome = None
         if "Temperature" in data.keys():
             outcome = self.handle_temperature(current_timestamp, data['Temperature'])
@@ -257,6 +307,11 @@ class Operator(OperatorBase):
                 else:
                     readings[key] = value
         return readings
+
+    def drop_replayed_readings(self, data, current_timestamp):
+        """Kafka starts again at the offset committed last, which can lie within the history replayed at start."""
+        return {key: value for key, value in data.items()
+                if key not in self.history_end or current_timestamp > self.history_end[key]}
 
     def record_first_data_time(self, current_timestamp):
         if not self.first_data_time:

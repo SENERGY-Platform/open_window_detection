@@ -136,6 +136,11 @@ class MovingMeanFeature:
         return self._detections
 
     @property
+    def started(self):
+        """Whether it has taken a reading, before a restart included."""
+        return self._current_period_start is not None
+
+    @property
     def current_mean(self):
         return self._current_mean
 
