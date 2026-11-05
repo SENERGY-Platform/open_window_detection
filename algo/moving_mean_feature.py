@@ -52,10 +52,7 @@ class MovingMeanFeature:
         self._waiting_for_reset_file = wait_for_reset_file
 
         self._model_parameter_file = 'model_parameters.pickle'
-        self._mean_file = "current_mean.pickle"
-        self._std_file = "current_std.pickle"
-        self._mean_count_per_day_file = "current_mean_count_per_day.pickle"
-        self._std_count_per_day_file = "current_std_count_per_day.pickle"
+        self._model_state_file = 'model_state.pickle'
 
         self._init_phase_days = model_parameters['init_phase_days']
 
@@ -92,10 +89,7 @@ class MovingMeanFeature:
         self._waiting_for_reset_counts = load(self._data_path, self._waiting_for_reset_file, [])
         self._dismissed_point_counts = load(self._data_path, self._dismissed_point_counts_file, [])
 
-        self._current_mean = load(self._data_path, self._mean_file, None)
-        self._current_std = load(self._data_path, self._std_file, None)
-        self._mean_count_per_period = load(self._data_path, self._mean_count_per_day_file, None)
-        self._std_count_per_period = load(self._data_path, self._std_count_per_day_file, None)
+        self.__load_state()
 
         para_string = ', '.join([f'{key} = {value}' for key, value in model_parameters.items()])
         logger.debug('movAvg model initiated with the following parameters: ' + para_string)
@@ -107,6 +101,21 @@ class MovingMeanFeature:
         save(self._data_path, self._dismissed_point_counts_file, self._dismissed_point_counts)
         save(self._data_path, self._pending_positive_file, self._pending_positive_counts)
         save(self._data_path, self._waiting_for_reset_file, self._waiting_for_reset_counts)
+        self.__save_state()
+
+    # everything the baseline needs to continue after a restart instead of starting over
+    _STATE_ATTRIBUTES = ('_current_mean', '_current_std', '_mean_count_per_period', '_std_count_per_period',
+                         '_period_vals_last_n_days', '_current_period_start', '_period_measurements',
+                         '_period_weights', '_period_point_count', '_end_of_init_phase',
+                         '_pending_positive', '_waiting_for_reset')
+
+    def __save_state(self):
+        save(self._data_path, self._model_state_file, {name: getattr(self, name) for name in self._STATE_ATTRIBUTES})
+
+    def __load_state(self):
+        for name, value in load(self._data_path, self._model_state_file, {}).items():
+            if name in self._STATE_ATTRIBUTES:
+                setattr(self, name, value)
 
     @property
     def data_path(self):
@@ -167,6 +176,7 @@ class MovingMeanFeature:
             if (current_ts - self._current_period_start) >= timedelta(hours=self._hours_per_period):  # a new period puts the old one to statistics
                 self.__calc_new_stats(current_ts)
                 self.__setup_new_period(current_ts, value)
+                self.__save_state()
                 return self._current_mean, self._current_std
 
                                                                         # normal add if no special case
