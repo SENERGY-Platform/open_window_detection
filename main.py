@@ -277,8 +277,9 @@ class Operator(OperatorBase):
                 pd.Timedelta(self.config.temperature_confirm_minutes, "min")):
             self.set_pending_drop(None)  # the temperature never followed
         if not self.pending_drop and drops.detect(current_timestamp, absolute_humidity, self.sliding_window_ah, sampled_sliding_window_ah):
-            self.set_pending_drop({"timestamp": current_timestamp,
-                                   "reference_temperature": drops.reference_temperature(self.sliding_window_temp, current_timestamp)})
+            reference = drops.reference_temperature(self.sliding_window_temp, current_timestamp, self.last_closing_time)
+            if reference is not None:  # none yet within 5 minutes of a closing; the drop is judged again then
+                self.set_pending_drop({"timestamp": current_timestamp, "reference_temperature": reference})
         if self.pending_drop and drops.temperature_confirms(self.sliding_window_temp, current_timestamp, self.pending_drop["reference_temperature"]):
             return 'drops_humid'
         if drops.temperature_drops_strongly(self.sliding_window_temp, sampled_sliding_window_temp, current_timestamp, self.last_closing_time):
@@ -311,7 +312,7 @@ class Operator(OperatorBase):
         self.open_since = current_timestamp
         self.open_min = utils.recent_mean(self.sliding_window_ah, current_timestamp, 3)
         self.temperature_before_opening = (self.pending_drop["reference_temperature"] if self.pending_drop else None) or \
-            self.unusualDrops_feature.reference_temperature(self.sliding_window_temp, current_timestamp)
+            self.unusualDrops_feature.reference_temperature(self.sliding_window_temp, current_timestamp, self.last_closing_time)
         self.pending_drop = None
         self.save_window_state()
 

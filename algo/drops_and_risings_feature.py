@@ -55,10 +55,12 @@ class DropsAndRisingsFeature:
                 return True
         return False
 
-    def reference_temperature(self, temperature_window, current_ts):
-        """Mean temperature 5 to 15 minutes before current_ts: from before a humidity drop that shows now."""
+    def reference_temperature(self, temperature_window, current_ts, last_closing_time):
+        """Mean temperature 5 to 15 minutes before current_ts: from before a humidity drop that shows now. Only since
+        the last closing, so the room still cold from that airing does not confirm the humidity still low from it."""
         values = [entry["value"] for entry in temperature_window
-                  if pd.Timedelta(5, "min") <= current_ts - entry["timestamp"] <= pd.Timedelta(15, "min")]
+                  if pd.Timedelta(5, "min") <= current_ts - entry["timestamp"] <= pd.Timedelta(15, "min") and
+                  (last_closing_time is False or entry["timestamp"] > last_closing_time)]
         return float(np.mean(values)) if values else None
 
     def temperature_confirms(self, temperature_window, current_ts, reference_temperature):

@@ -87,6 +87,22 @@ class TestFastClosing(DetectionTestCase):
 
         self.assertEqual([is_open for _, is_open in transitions(outputs)], [True, False])
 
+    def test_the_humidity_drop_of_the_last_airing_does_not_reopen_the_window(self):
+        # the temperature shows the closing while humidity is still far below its level from before the airing
+        outputs = self.run_scenario(Room(-5, 80, tau_temperature_open=30), 240, openings=[(OPEN_AT, 5)])
+
+        self.assertEqual([is_open for _, is_open in transitions(outputs)], [True, False])
+
+
+class TestRepeatedAiring(DetectionTestCase):
+    def test_detects_a_second_airing_10_minutes_after_the_first(self):
+        second = OPEN_AT + 20
+        outputs = self.run_scenario(Room(0, 80), 300, openings=[(OPEN_AT, 10), (second, 10)])
+
+        changes = transitions(outputs)
+        self.assertEqual([is_open for _, is_open in changes], [True, False, True, False])
+        self.assertLessEqual(changes[2][0], second + 5)
+
 
 class TestMildWeatherAiring(DetectionTestCase):
     def test_detects_the_opening_by_the_temperature_drop_when_humidity_hardly_changes(self):
