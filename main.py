@@ -56,8 +56,8 @@ READING_RANGES = {"Temperature": (-40.0, 85.0), "Humidity": (0.0, 100.0)}
 # detection thresholds of CustomConfig, see the README
 THRESHOLDS = ("max_temperature_age_minutes", "ah_drop_min", "ah_drop_std_factor", "ah_falling_slope",
               "ah_extreme_drop", "temperature_confirm_drop", "temperature_confirm_minutes", "temperature_strong_drop",
-              "temperature_strong_drop_minutes", "close_temperature_slope", "close_ah_rise", "max_open_minutes",
-              "rebound_humidity", "rebound_minutes")
+              "temperature_strong_drop_minutes", "close_temperature_rise", "close_temperature_slope", "close_ah_rise",
+              "max_open_minutes", "rebound_humidity", "rebound_minutes")
 
 from operator_lib.util import Config
 class CustomConfig(Config):
@@ -83,6 +83,7 @@ class CustomConfig(Config):
     temperature_confirm_minutes = 20.0      # ... within this many minutes of it
     temperature_strong_drop = 1.5           # a temperature drop that opens the window on its own ...
     temperature_strong_drop_minutes = 15.0  # ... within this many minutes
+    close_temperature_rise = 0.3            # above the lowest temperature while open: the room no longer cools
     close_temperature_slope = 0.05          # per minute over 10 minutes: heating brings the room back
     close_ah_rise = 0.3                     # above the lowest humidity while open
     max_open_minutes = 0.0                  # after this the window counts as closed; 0: no limit
@@ -154,6 +155,7 @@ class Operator(OperatorBase):
         self.window_open = window_state.get("window_open", False)
         self.open_since = window_state.get("open_since")
         self.open_min = window_state.get("open_min")  # lowest smoothed absolute humidity while open
+        self.open_temperature_min = window_state.get("open_temperature_min")  # lowest smoothed temperature while open
         self.temperature_before_opening = window_state.get("temperature_before_opening")
         self.pending_drop = window_state.get("pending_drop")  # a humidity drop the temperature has not confirmed yet
         self.window_closing_times = load(self.data_path, WINDOW_CLOSING_FILENAME, [])
@@ -293,6 +295,14 @@ class Operator(OperatorBase):
         self.open_min = smoothed if self.open_min is None else min(self.open_min, smoothed)
         if smoothed - self.open_min >= self.config.close_ah_rise:
             return True
+        # the room cools as long as the window is open; a short airing in mild weather cools it so little that the
+        # rise afterwards stays below close_temperature_slope, but it does rise above its lowest value
+        temperature = utils.recent_mean(self.sliding_window_temp, current_timestamp, 3)
+        if temperature is not None:
+            self.open_temperature_min = (temperature if self.open_temperature_min is None
+                                         else min(self.open_temperature_min, temperature))
+            if temperature - self.open_temperature_min >= self.config.close_temperature_rise:
+                return True
         if utils.compute_n_min_slope(sampled_sliding_window_temp, 10) >= self.config.close_temperature_slope:
             return True
         max_open = pd.Timedelta(self.config.max_open_minutes, "min")
@@ -311,6 +321,7 @@ class Operator(OperatorBase):
         self.window_open = True
         self.open_since = current_timestamp
         self.open_min = utils.recent_mean(self.sliding_window_ah, current_timestamp, 3)
+        self.open_temperature_min = utils.recent_mean(self.sliding_window_temp, current_timestamp, 3)
         self.temperature_before_opening = (self.pending_drop["reference_temperature"] if self.pending_drop else None) or \
             self.unusualDrops_feature.reference_temperature(self.sliding_window_temp, current_timestamp, self.last_closing_time)
         self.pending_drop = None
@@ -322,6 +333,7 @@ class Operator(OperatorBase):
         self.window_open = False
         self.open_since = None
         self.open_min = None
+        self.open_temperature_min = None
         self.last_closing_time=current_timestamp
         utils.append_capped(self.window_closing_times, (current_timestamp, current_value))
         # humidity stays below its baseline for a while after airing; that is no new opening
@@ -341,6 +353,7 @@ class Operator(OperatorBase):
             "window_open": self.window_open,
             "open_since": self.open_since,
             "open_min": self.open_min,
+            "open_temperature_min": self.open_temperature_min,
             "temperature_before_opening": self.temperature_before_opening,
             "pending_drop": self.pending_drop,
         })

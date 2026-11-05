@@ -13,8 +13,9 @@ temperature:
   once the temperature has fallen below its level from before that drop. A strong temperature drop alone also counts,
   for airing in mild weather when outdoor air holds about as much water as the room. After an initial phase, a
   long-term baseline of absolute humidity detects values far below normal as well.
-- **Closing.** The window counts as closed when the heating brings the temperature back up, or when absolute humidity
-  rises again above its lowest value while open.
+- **Closing.** The room cools as long as the window is open. So the window counts as closed when the temperature or
+  absolute humidity rises again above its lowest value while open, or when the heating brings the temperature back up
+  quickly.
 - **Humidity rebound.** Within 30 minutes after closing, the operator reports if humidity comes back too high, judged
   on the relative humidity the air would have at the room temperature from before the airing, so the cold air right
   after closing does not pass for humid air.
@@ -69,6 +70,7 @@ All optional; humidity values are absolute humidity in g/m³, temperatures in K.
 | `temperature_confirm_minutes`     | 20      | ... within this many minutes of the humidity drop                                  |
 | `temperature_strong_drop`         | 1.5     | Temperature fall that counts as an open window on its own ...                      |
 | `temperature_strong_drop_minutes` | 15      | ... within this many minutes                                                       |
+| `close_temperature_rise`          | 0.3     | Rise above the lowest temperature while open that counts as closed                 |
 | `close_temperature_slope`         | 0.05    | Temperature rise per minute over 10 minutes that counts as closed                  |
 | `close_ah_rise`                   | 0.3     | Rise above the lowest absolute humidity while open that counts as closed           |
 | `max_open_minutes`                | 0       | Minutes after which an open window counts as closed; 0 for no limit                |

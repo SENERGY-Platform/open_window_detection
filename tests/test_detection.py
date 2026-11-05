@@ -104,6 +104,19 @@ class TestRepeatedAiring(DetectionTestCase):
         self.assertLessEqual(changes[2][0], second + 5)
 
 
+class TestMildWeatherClosing(DetectionTestCase):
+    """10 °C and 80 % outside for 5 minutes: humidity falls a little and recovers slowly, and the temperature falls
+    by well under a degree, so it rises back too slowly to count as heating."""
+
+    def test_reports_the_window_closed_within_15_minutes_of_closing(self):
+        outputs = self.run_scenario(Room(10, 80, tau_temperature_open=60), 240, openings=[(OPEN_AT, 5)])
+
+        minute, is_open = transitions(outputs)[-1]
+        self.assertFalse(is_open)
+        self.assertGreaterEqual(minute, OPEN_AT + 5)
+        self.assertLessEqual(minute, OPEN_AT + 5 + 15)
+
+
 class TestMildWeatherAiring(DetectionTestCase):
     def test_detects_the_opening_by_the_temperature_drop_when_humidity_hardly_changes(self):
         # 12 °C and 85 % outside hold about as much water as the room: only the temperature shows the airing
