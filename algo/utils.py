@@ -1,4 +1,3 @@
-from datetime import datetime
 import math
 
 import pandas as pd
@@ -16,6 +15,21 @@ def parse_reading(raw, low, high):
     return value
 
 
+def saturation_vapour_pressure(temperature):
+    """hPa over water at temperature in °C, Magnus formula with the WMO coefficients."""
+    return 6.112 * math.exp(17.62 * temperature / (243.12 + temperature))
+
+
+def absolute_humidity(temperature, relative_humidity):
+    """g/m³ of water vapour in air of temperature °C and relative_humidity %."""
+    return 216.7 * (relative_humidity / 100 * saturation_vapour_pressure(temperature)) / (273.15 + temperature)
+
+
+def relative_humidity(temperature, absolute_humidity):
+    """% that absolute_humidity g/m³ amounts to in air of temperature °C."""
+    return 100 * absolute_humidity * (273.15 + temperature) / 216.7 / saturation_vapour_pressure(temperature)
+
+
 def todatetime(timestamp):
     if str(timestamp).isdigit():
         if len(str(timestamp))==13:
@@ -24,7 +38,7 @@ def todatetime(timestamp):
             return pd.to_datetime(int(timestamp), unit='ns')
     else:
         return pd.to_datetime(timestamp)
-    
+
 def update_sliding_window(sliding_window, new_value, current_timestamp):
     sliding_window.append({"timestamp": current_timestamp, "value": new_value})
     cut_index = 0
@@ -39,18 +53,29 @@ def update_sliding_window(sliding_window, new_value, current_timestamp):
         sliding_window = sliding_window[cut_index:]
         return sliding_window
 
-def compute_front_end_measures(sliding_window):
+def compute_front_end_measures(sliding_window, noise_floor):
+    """Splits the window into its last 5 minutes (end) and everything before (front).
+
+    Returns the front's median as the level before a change, robust against a passing spike such as a shower,
+    the front's spread around its linear trend as its noise (at least noise_floor, the sensor's resolution), and the
+    end's mean. All three are None while the window spans 40 minutes or less.
+    """
     first_entry_timestamp = sliding_window[0]["timestamp"]
     last_entry_timestamp = sliding_window[-1]["timestamp"]
-    if last_entry_timestamp - first_entry_timestamp > pd.Timedelta(40, "min"):
-        startindex_of_the_end = len(sliding_window)- len([entry["timestamp"] for entry in sliding_window if last_entry_timestamp - entry["timestamp"] < pd.Timedelta(5, "min")])
-        front_window = [sliding_window[i]["value"] for i in range(startindex_of_the_end)]
-        end_window = [sliding_window[i]["value"] for i in range(startindex_of_the_end, len(sliding_window))]
-        front_mean = np.mean(front_window)
-        front_std = np.std(front_window)
-        end_mean = np.mean(end_window)
-        return front_mean, front_std, end_mean
-    return 0, 0, 0
+    if last_entry_timestamp - first_entry_timestamp <= pd.Timedelta(40, "min"):
+        return None, None, None
+    front = [entry for entry in sliding_window if last_entry_timestamp - entry["timestamp"] >= pd.Timedelta(5, "min")]
+    end = [entry["value"] for entry in sliding_window if last_entry_timestamp - entry["timestamp"] < pd.Timedelta(5, "min")]
+    minutes = [(entry["timestamp"] - last_entry_timestamp).total_seconds() / 60 for entry in front]
+    values = np.array([entry["value"] for entry in front])
+    trend = np.polyval(np.polyfit(minutes, values, 1), minutes)
+    noise = max(float(np.std(values - trend)), noise_floor)
+    return float(np.median(values)), noise, float(np.mean(end))
+
+def recent_mean(sliding_window, current_timestamp, minutes):
+    """Mean of the readings of the last `minutes` minutes before current_timestamp, or None if there are none."""
+    values = [entry["value"] for entry in sliding_window if current_timestamp - entry["timestamp"] < pd.Timedelta(minutes, "min")]
+    return float(np.mean(values)) if values else None
 
 def minute_resampling(sliding_window):
     """The window linearly interpolated at every full minute between its first and last reading."""
@@ -77,11 +102,6 @@ def compute_n_min_slope(sampled_sliding_window, n:int):
         return 0
     minutes = [(entry["timestamp"] - last_timestamp).total_seconds() / 60 for entry in recent]
     return float(np.polyfit(minutes, [entry["value"] for entry in recent], 1)[0])
-
-def is_summer(date:datetime):
-    sum_start = 5
-    sum_end = 8
-    return sum_start<=date.month<=sum_end
 
 def notify(notification_mode: str, window_open: bool, window_state_changed: bool):
     if window_state_changed:

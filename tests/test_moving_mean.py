@@ -91,6 +91,18 @@ class TestBaselinePersistence(MovingMeanTestCase):
         self.assertAlmostEqual(restarted.current_std, uninterrupted.current_std)
 
 
+class TestOutliers(MovingMeanTestCase):
+    def test_high_humidity_in_summer_is_no_outlier(self):
+        # rising humidity in summer is a shower or cooking far more often than an open window
+        feature = new_feature(self.data_path)
+        values = readings([10, 10, 10, 10])
+        summer = [(timestamp.replace(month=7), value) for timestamp, value in values]
+        feed(feature, summer)
+        last = summer[-1][0]
+
+        self.assertFalse(feature.detect(last, 14.0, [{"timestamp": last, "value": 14.0}]))
+
+
 class TestModelParameters(MovingMeanTestCase):
     def test_exposes_its_model_parameters(self):
         self.assertEqual(new_feature(self.data_path).model_parameters["std_ratio"], 3)

@@ -8,6 +8,8 @@ import os
 
 class MovingMeanFeature:
     """
+    Long-term baseline of absolute humidity (g/m³); a value far below it counts as an open window.
+
     model parameters:
         'init_phase_days'   initial days in which all periods are added to the avg unconditionally if there are enough points
                             periods with missing data are only excluded afterward
@@ -27,6 +29,8 @@ class MovingMeanFeature:
                             error_influence=0 turns off the feature, and excludes positives completely in avg calculation
                             (some integration allows better real time adaptability then none,
                             also effective do integrate possible FP and early stop long FP when Humidity baseline decreases naturally)
+        'reset_slope':      g/m³ per minute; humidity rising faster than this after a detection marks it as a false positive,
+                            and detection waits until humidity is back within the band
     """
     def __init__(self, data_path:str, detections_file:str, dismissed_point_count_file:str, pending_positive_file:str,
                  wait_for_reset_file, model_parameters=None):
@@ -36,7 +40,8 @@ class MovingMeanFeature:
             'std_ratio': 3,             # good tested values: 3, 4
             'days': 1,                  # good tested values: 1, 2
             'hours_per_period': 6,      # good tested values: 6, 8
-            'error_influence': 0.6      # good tested values: 0.5 - 0.75
+            'error_influence': 0.6,     # good tested values: 0.5 - 0.75
+            'reset_slope': 0.01         # the former 0.05 %/min in absolute humidity at room temperature
         }
 
         model_parameters = default_parameters if model_parameters is None else self.__update_parameters(default_parameters, model_parameters)
@@ -83,6 +88,7 @@ class MovingMeanFeature:
         self._pending_positive = False
         self._waiting_for_reset = False
         self._slope_min = model_parameters['slope_minutes']
+        self._reset_slope = model_parameters['reset_slope']
 
         self._detections = load(self._data_path, self._detections_file, [])
         self._pending_positive_counts = load(self._data_path, self._pending_positive_file, [])
@@ -229,7 +235,7 @@ class MovingMeanFeature:
 
     def __update_reset(self, current_ts, current_value, sampled_sliding_window):
         slope = utils.compute_n_min_slope(sampled_sliding_window, self._slope_min)
-        if self._pending_positive and slope > 0.05:
+        if self._pending_positive and slope > self._reset_slope:
             self._waiting_for_reset = True
             self._pending_positive = False
 
@@ -251,17 +257,19 @@ class MovingMeanFeature:
                     (current_ts, current_value, self._current_mean, self._current_std, False))
                 save(self._data_path, self._waiting_for_reset_file, self._waiting_for_reset_counts)
 
-    def __is_outlier(self, value) -> bool:  # change to median
-        ratio = self._std_ratio
-        too_low = (value < (self._current_mean - ratio * self._current_std))
-        too_high = (value > (self._current_mean + ratio * self._current_std))
+    def wait_for_reset(self, current_ts, current_value):
+        """Holds detection back until humidity is within the band again, e.g. after a window closed, when humidity
+        stays below the baseline for a while."""
+        if self._current_mean and not self._waiting_for_reset:
+            self._waiting_for_reset = True
+            self._pending_positive = False
+            self._waiting_for_reset_counts.append((current_ts, current_value, self._current_mean, self._current_std, True))
+            save(self._data_path, self._waiting_for_reset_file, self._waiting_for_reset_counts)
 
-        is_outlier = False
-        if too_low and (not utils.is_summer(self._current_period_start)):
-            is_outlier = True
-        elif too_high and (utils.is_summer(self._current_period_start)):
-            is_outlier = True
-        return is_outlier
+    def __is_outlier(self, value) -> bool:  # change to median
+        # only too low: without outdoor data, humidity above the band is a shower or cooking far more often
+        # than an open window
+        return value < (self._current_mean - self._std_ratio * self._current_std)
 
     def __setup_new_period(self, current_ts, value):
         self._current_period_start = current_ts

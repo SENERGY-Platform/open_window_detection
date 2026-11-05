@@ -59,7 +59,7 @@ class Room:
 
     def readings(self, minutes, openings=(), moisture_sources=()):
         """(minute, temperature, humidity) once a minute. openings are (start, duration) in minutes,
-        moisture_sources (start, duration, g/m³ added per minute)."""
+        moisture_sources (start, duration, g/m³ added per minute, optionally K added per minute)."""
         temperature, airing_offset, moisture = self.setpoint, 0.0, 0.0
         result = []
         for minute in range(minutes):
@@ -70,7 +70,9 @@ class Room:
             else:
                 temperature += (self.setpoint - temperature) * _step(self.tau_temperature_heating)
                 airing_offset -= airing_offset * _step(self.tau_humidity_recovery)
-            moisture += sum(rate for start, duration, rate in moisture_sources if start <= minute < start + duration)
+            active = [source for source in moisture_sources if source[0] <= minute < source[0] + source[1]]
+            moisture += sum(source[2] for source in active)
+            temperature += sum(source[3] for source in active if len(source) > 3)
             moisture -= moisture * _step(self.tau_moisture_removal)
             ah = self.baseline_ah + airing_offset + moisture
             result.append((

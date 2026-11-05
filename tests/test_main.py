@@ -103,6 +103,14 @@ class TestInitPhase(unittest.TestCase):
         self.assertNotIn("NaT", producer.messages[0]["analytics"]["initial_phase"])
 
 
+class TestConfig(unittest.TestCase):
+    def test_reads_a_threshold_from_the_string_the_flow_engine_passes(self):
+        self.assertEqual(CustomConfig({"ah_drop_min": "0.5"}).ah_drop_min, 0.5)
+
+    def test_keeps_the_default_of_an_empty_threshold(self):
+        self.assertEqual(CustomConfig({"ah_drop_min": ""}).ah_drop_min, 0.4)
+
+
 class TestNotification(unittest.TestCase):
     def test_notifies_once_per_change_of_the_window_state(self):
         data_dir = tempfile.TemporaryDirectory()

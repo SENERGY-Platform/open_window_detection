@@ -21,11 +21,10 @@ import typing
 import dotenv
 dotenv.load_dotenv()
 
-from operator_lib.util import OperatorBase, logger, InitPhase, todatetime, timestamp_to_str, Selector
+from operator_lib.util import OperatorBase, logger, InitPhase, timestamp_to_str, Selector
 from operator_lib.util.persistence import save, load
 import os
 import pandas as pd
-from numpy import nan
 import datetime
 from algo import utils
 from algo.moving_mean_feature import MovingMeanFeature
@@ -37,6 +36,7 @@ ALL_DETECTIONS_FILENAME = 'all_detections.pickle'
 WINDOW_CLOSING_FILENAME = "window_closing_times.pickle"
 FIRST_DATA_FILENAME = "first_data_time.pickle"
 LAST_CLOSING_TIME_FILENAME = "last_closing_time.pickle"
+WINDOW_STATE_FILENAME = "window_state.pickle"
 # dropsAndRisings feature
 DROP_DETECTIONS_FILENAME = "drop_detections.pickle"
 DROP_HUMIDITY_REBOUNDS_FILENAME = "drop_humidity_rebounds.pickle"
@@ -46,13 +46,18 @@ MOV_MEAN_POINT_COUNT_FILENAME = "movingMean_point_count.pickle"
 MOV_MEAN_PENDING_POSITIVE_FILENAME = "movingMean_pending_positive.pickle"
 MOV_MEAN_WAITING_FOR_RESET_FILENAME = "movingMean_waiting_for_reset.pickle"
 
-SLIDING_WINDOW_HUMID_FILENAME = "sliding_window_humid.pickle"
+# the humidity window holds absolute humidity now; the relative humidity of the former file must not be read as such
+SLIDING_WINDOW_AH_FILENAME = "sliding_window_ah.pickle"
 SLIDING_WINDOW_TEMP_FILENAME = "sliding_window_temp.pickle"
-
-LAST_TEMP_DROP_TIME_FILE = "last_temp_drop_time.pickle"
 
 # readings outside these ranges are sensor faults, not room climate
 READING_RANGES = {"Temperature": (-40.0, 85.0), "Humidity": (0.0, 100.0)}
+
+# detection thresholds of CustomConfig, see the README
+THRESHOLDS = ("max_temperature_age_minutes", "ah_drop_min", "ah_drop_std_factor", "ah_falling_slope",
+              "ah_extreme_drop", "temperature_confirm_drop", "temperature_confirm_minutes", "temperature_strong_drop",
+              "temperature_strong_drop_minutes", "close_temperature_slope", "close_ah_rise", "max_open_minutes",
+              "rebound_humidity", "rebound_minutes")
 
 from operator_lib.util import Config
 class CustomConfig(Config):
@@ -67,6 +72,22 @@ class CustomConfig(Config):
     moving_mean_days = None
     moving_mean_hours_per_period = None
     moving_mean_error_influence = None
+    moving_mean_reset_slope = None
+    # detection thresholds; humidity in absolute humidity (g/m³), temperature in K
+    max_temperature_age_minutes = 10.0      # older temperature readings give no absolute humidity
+    ah_drop_min = 0.4                       # drop of the last 5 minutes below the hour before
+    ah_drop_std_factor = 1.0                # the same drop, in units of the hour's noise
+    ah_falling_slope = 0.02                 # per minute over the last 10 minutes ...
+    ah_extreme_drop = 0.9                   # ... or between two readings
+    temperature_confirm_drop = 0.3          # below the temperature before a humidity drop ...
+    temperature_confirm_minutes = 20.0      # ... within this many minutes of it
+    temperature_strong_drop = 1.5           # a temperature drop that opens the window on its own ...
+    temperature_strong_drop_minutes = 15.0  # ... within this many minutes
+    close_temperature_slope = 0.05          # per minute over 10 minutes: heating brings the room back
+    close_ah_rise = 0.3                     # above the lowest humidity while open
+    max_open_minutes = 0.0                  # after this the window counts as closed; 0: no limit
+    rebound_humidity = 65.0                 # % relative humidity at the temperature before opening ...
+    rebound_minutes = 30.0                  # ... within this many minutes after closing
 
     def __init__(self, d, **kwargs):
         super().__init__(d, **kwargs)
@@ -79,15 +100,26 @@ class CustomConfig(Config):
         if self.init_phase_level == '':
             self.init_phase_level = 'd'
 
+        # the flow engine hands every config value over as a string
+        for name in THRESHOLDS:
+            value = getattr(self, name)
+            setattr(self, name, float(value) if value not in (None, '') else getattr(CustomConfig, name))
+
 # a function, not a CustomConfig method: simple_struct copies every public class attribute onto the instance,
 # methods included, which leaves them unbound there
 def moving_mean_parameters(config):
     types = {'init_phase_days': float, 'slope_minutes': int, 'std_ratio': float, 'days': int,
-             'hours_per_period': int, 'error_influence': float}
+             'hours_per_period': int, 'error_influence': float, 'reset_slope': float}
     values = {name: getattr(config, f'moving_mean_{name}') for name in types}
     return {name: types[name](value) for name, value in values.items() if value not in (None, '')}
 
 class Operator(OperatorBase):
+    """Detects open windows from a room's temperature and relative humidity.
+
+    Relative humidity alone is ambiguous: an open window lowers the water content of the air but also the
+    temperature, which raises relative humidity. So detection runs on absolute humidity, computed from both, and
+    on the temperature: humidity falls within minutes, the temperature follows more slowly and confirms.
+    """
     configType = CustomConfig
 
     def init(self, *args, **kwargs):
@@ -100,7 +132,7 @@ class Operator(OperatorBase):
             self.data_path,
             DROP_DETECTIONS_FILENAME,
             DROP_HUMIDITY_REBOUNDS_FILENAME,
-            LAST_TEMP_DROP_TIME_FILE
+            self.config
         )
 
         self.movingMean_feature = MovingMeanFeature(
@@ -115,15 +147,19 @@ class Operator(OperatorBase):
         self.first_data_time = load(self.data_path, FIRST_DATA_FILENAME)
         self.last_closing_time = load(self.data_path, LAST_CLOSING_TIME_FILENAME, False)
 
-        self.sliding_window_humid = load(self.data_path, SLIDING_WINDOW_HUMID_FILENAME, []) # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": humidity}
+        self.sliding_window_ah = load(self.data_path, SLIDING_WINDOW_AH_FILENAME, []) # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": absolute humidity}
         self.sliding_window_temp = load(self.data_path, SLIDING_WINDOW_TEMP_FILENAME, []) # This contains the data from the last hour. Entries of the list are pairs of the form {"timestamp": ts, "value": temperature}
- 
-        self.window_open = False
-        self.open_min = None
+
+        window_state = load(self.data_path, WINDOW_STATE_FILENAME, {})
+        self.window_open = window_state.get("window_open", False)
+        self.open_since = window_state.get("open_since")
+        self.open_min = window_state.get("open_min")  # lowest smoothed absolute humidity while open
+        self.temperature_before_opening = window_state.get("temperature_before_opening")
+        self.pending_drop = window_state.get("pending_drop")  # a humidity drop the temperature has not confirmed yet
         self.window_closing_times = load(self.data_path, WINDOW_CLOSING_FILENAME, [])
         self.detections = load(self.data_path, ALL_DETECTIONS_FILENAME, [])
 
-        self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
+        self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)
         now = pd.Timestamp.now(tz="UTC")
         # before the first reading the end of the init phase can only be estimated from now;
         # run() replaces the handler once the first reading arrives
@@ -132,21 +168,20 @@ class Operator(OperatorBase):
             "window_open": False,
             "timestamp": timestamp_to_str(now)
         }
-        self.init_phase_handler.send_first_init_msg(value)    
-
-        self.humid_drop_detected = False
-        self.temp_drop_detected = False
+        self.init_phase_handler.send_first_init_msg(value)
 
         self.notification_mode = self.config.notification_mode
         self.window_state_changed = False
-        
+        self.missing_temperature_reported = False
+
     def stop(self):
         super().stop()
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
         save(self.data_path, WINDOW_CLOSING_FILENAME, self.window_closing_times)
         save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
-        save(self.data_path, SLIDING_WINDOW_HUMID_FILENAME, self.sliding_window_humid)
+        save(self.data_path, SLIDING_WINDOW_AH_FILENAME, self.sliding_window_ah)
         save(self.data_path, SLIDING_WINDOW_TEMP_FILENAME, self.sliding_window_temp)
+        self.save_window_state()
         self.movingMean_feature.stop()
         self.unusualDrops_feature.stop()
 
@@ -155,88 +190,60 @@ class Operator(OperatorBase):
         if not data:
             return None
 
+        current_timestamp = pd.Timestamp(timestamp)
+        outcome = None
         if "Temperature" in data.keys():
-            current_temp_timestamp = pd.Timestamp(timestamp)
-            current_temp_value = float(data['Temperature'])
-            logger.debug("Temperature" + ":  " + str(current_temp_value) + '  ' + "Temperature Time: "+ timestamp_to_str(current_temp_timestamp))
-            
-            # init phase
-            if not self.first_data_time:
-                self.first_data_time = current_temp_timestamp
-                save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
-                self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
-
-            # initialize last_temp_drop_time
-            if not self.unusualDrops_feature.last_temp_drop_time:
-                self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
-            
-            # collect data in init phase
-            self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, current_temp_value, current_temp_timestamp)
-
-            outcome = self.check_for_init_phase(current_temp_timestamp)
-            if outcome==False:  # init phase cuts of normal analysis, but do not return yet because there could be more information from the humidity value
-                # normal detection
-                sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
-
-                self.temp_drop_detected = False # only set to true if drops feature detected unusual temperature drop
-
-                detected, feature = self.detect(current_temp_value, current_temp_timestamp, sampled_sliding_window_temp, "temperature")
-                if detected:
-                    self.temp_drop_detected = True
-                    self.unusualDrops_feature.last_temp_drop_time = current_temp_timestamp
-                    if self.humid_drop_detected:
-                        self.save_detection(current_temp_timestamp, current_temp_value, feature, nan)
-        
+            outcome = self.handle_temperature(current_timestamp, data['Temperature'])
         if "Humidity" in data.keys():
-            current_humid_timestamp = pd.Timestamp(timestamp)
-            current_humid_value = float(data['Humidity'])
-            logger.debug('Humidity: ' + str(current_humid_value) + '  ' + 'Humidity Time: ' + timestamp_to_str(current_humid_timestamp))
+            outcome = self.handle_humidity(current_timestamp, data['Humidity'])
+        return outcome
 
-            # init phase
-            if not self.first_data_time:
-                self.first_data_time = current_humid_timestamp
-                save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
-                self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
-            
-            # collect data in init phase
-            self.movingMean_feature.update_stats(current_humid_timestamp, current_humid_value, self.window_open)
-            self.sliding_window_humid = utils.update_sliding_window(self.sliding_window_humid, current_humid_value, current_humid_timestamp)
+    def handle_temperature(self, current_timestamp, temperature):
+        logger.debug("Temperature" + ":  " + str(temperature) + '  ' + "Temperature Time: "+ timestamp_to_str(current_timestamp))
+        self.record_first_data_time(current_timestamp)
+        self.sliding_window_temp = utils.update_sliding_window(self.sliding_window_temp, temperature, current_timestamp)
+        # the window state is decided with each humidity reading, which also carries the output
+        return self.check_for_init_phase(current_timestamp) or None
 
-            outcome = self.check_for_init_phase(current_humid_timestamp)
-            if outcome: return outcome  # init phase cuts of normal analysis
+    def handle_humidity(self, current_timestamp, humidity):
+        logger.debug('Humidity: ' + str(humidity) + '  ' + 'Humidity Time: ' + timestamp_to_str(current_timestamp))
+        self.record_first_data_time(current_timestamp)
 
-            # normal detection
-            sampled_sliding_window_humid = utils.minute_resampling(self.sliding_window_humid)
-            slope = utils.compute_n_min_slope(sampled_sliding_window_humid, 10)
+        temperature = self.latest_temperature(current_timestamp)
+        if temperature is None:
+            if not self.missing_temperature_reported:
+                logger.warning(f"no temperature reading in the last {self.config.max_temperature_age_minutes:g} minutes: "
+                               "without it there is no absolute humidity and no detection")
+                self.missing_temperature_reported = True
+            return self.check_for_init_phase(current_timestamp) or self.build_return_values(current_timestamp, False)
+        self.missing_temperature_reported = False
+        absolute_humidity = utils.absolute_humidity(temperature, humidity)
 
-            self.humid_drop_detected = False # only set to true if drops feature detected unusual humidity drop
+        # collect data in init phase
+        self.movingMean_feature.update_stats(current_timestamp, absolute_humidity, self.window_open)
+        self.sliding_window_ah = utils.update_sliding_window(self.sliding_window_ah, absolute_humidity, current_timestamp)
 
-            if (self.window_open and (utils.compute_n_min_slope(sampled_sliding_window_humid, 10) > 0.12
-                                      or (self.open_min and (current_humid_value - self.open_min>1.2)))):
-                    self.save_closed_window(current_humid_timestamp, current_humid_value)
-            else:
-                detected, feature = self.detect(current_humid_value, current_humid_timestamp, sampled_sliding_window_humid, "humidity")
-                if detected:
-                    if feature == "drops_humid":
-                        self.humid_drop_detected = True
-                        last_temp_drop_time = self.unusualDrops_feature.last_temp_drop_time
-                        # set by the first temperature message, which may come after the first humidity drop
-                        if last_temp_drop_time is not None and current_humid_timestamp - last_temp_drop_time < pd.Timedelta(20,"min"): # open window only then detected if humidity and temperature dropped unusually
-                            self.save_detection(current_humid_timestamp, current_humid_value, feature, slope)
-                    else:
-                        self.save_detection(current_humid_timestamp, current_humid_value, feature, slope)
-                else:
-                    if self.window_open:
-                        self.save_detection(current_humid_timestamp, current_humid_value, 'None', slope) # window is still open but features are not detecting anymore
+        outcome = self.check_for_init_phase(current_timestamp)
+        if outcome: return outcome  # init phase cuts of normal analysis
 
-            self.movingMean_feature.update_reset_functionality(current_humid_timestamp, current_humid_value, sampled_sliding_window_humid)
-            humidity_rebound_detected = self.unusualDrops_feature.check_for_fast_risings(
-                current_humid_timestamp, sampled_sliding_window_humid, self.window_open, self.last_closing_time)
+        # normal detection
+        sampled_sliding_window_ah = utils.minute_resampling(self.sliding_window_ah)
+        sampled_sliding_window_temp = utils.minute_resampling(self.sliding_window_temp)
 
-            return self.build_return_values(current_humid_timestamp, humidity_rebound_detected)
-        
-        if outcome: return outcome  # init phase cuts of normal analysis, this line is only reached if operator is in init phase and only a temperature value was sent
+        if self.window_open:
+            if self.is_closed(current_timestamp, sampled_sliding_window_temp):
+                self.save_closed_window(current_timestamp, absolute_humidity)
+        else:
+            feature = self.detect(current_timestamp, absolute_humidity, sampled_sliding_window_ah, sampled_sliding_window_temp)
+            if feature:
+                self.save_detection(current_timestamp, absolute_humidity, feature, utils.compute_n_min_slope(sampled_sliding_window_ah, 10))
 
+        self.movingMean_feature.update_reset_functionality(current_timestamp, absolute_humidity, sampled_sliding_window_ah)
+        humidity_rebound_detected = self.unusualDrops_feature.check_for_fast_risings(
+            current_timestamp, sampled_sliding_window_ah, self.window_open, self.last_closing_time,
+            self.temperature_before_opening or temperature)
+
+        return self.build_return_values(current_timestamp, humidity_rebound_detected)
 
     def drop_invalid_readings(self, data):
         readings = {}
@@ -249,24 +256,51 @@ class Operator(OperatorBase):
                     readings[key] = value
         return readings
 
-    def detect(self, current_value, current_timestamp, sampled_sliding_window, selector) -> (bool, str):
-        if selector == "humidity":
-            if self.unusualDrops_feature.detect(current_timestamp, current_value, self.sliding_window_humid,  sampled_sliding_window,
-                                                self.window_open, selector, std_factor=1):
-                return True, 'drops_humid'
-            elif self.movingMean_feature.detect(current_timestamp, current_value, sampled_sliding_window):
-                return True, 'moving_mean'
-            return False, ''
-        elif selector == "temperature":
-            if self.unusualDrops_feature.detect(current_timestamp, current_value, self.sliding_window_temp,  sampled_sliding_window,
-                                                self.window_open, selector, std_factor=0.3):
-                return True, 'drops_temp'
-            return False, ''
+    def record_first_data_time(self, current_timestamp):
+        if not self.first_data_time:
+            self.first_data_time = current_timestamp
+            save(self.data_path, FIRST_DATA_FILENAME, self.first_data_time)
+            self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+
+    def latest_temperature(self, current_timestamp):
+        if not self.sliding_window_temp:
+            return None
+        latest = self.sliding_window_temp[-1]
+        if abs(current_timestamp - latest["timestamp"]) > pd.Timedelta(self.config.max_temperature_age_minutes, "min"):
+            return None
+        return latest["value"]
+
+    def detect(self, current_timestamp, absolute_humidity, sampled_sliding_window_ah, sampled_sliding_window_temp) -> typing.Optional[str]:
+        """The feature that detects an open window now, or None."""
+        drops = self.unusualDrops_feature
+        if (self.pending_drop and current_timestamp - self.pending_drop["timestamp"] >
+                pd.Timedelta(self.config.temperature_confirm_minutes, "min")):
+            self.set_pending_drop(None)  # the temperature never followed
+        if not self.pending_drop and drops.detect(current_timestamp, absolute_humidity, self.sliding_window_ah, sampled_sliding_window_ah):
+            self.set_pending_drop({"timestamp": current_timestamp,
+                                   "reference_temperature": drops.reference_temperature(self.sliding_window_temp, current_timestamp)})
+        if self.pending_drop and drops.temperature_confirms(self.sliding_window_temp, current_timestamp, self.pending_drop["reference_temperature"]):
+            return 'drops_humid'
+        if drops.temperature_drops_strongly(self.sliding_window_temp, sampled_sliding_window_temp, current_timestamp, self.last_closing_time):
+            return 'drops_temp'
+        if self.movingMean_feature.detect(current_timestamp, absolute_humidity, sampled_sliding_window_ah):
+            return 'moving_mean'
+        return None
+
+    def is_closed(self, current_timestamp, sampled_sliding_window_temp) -> bool:
+        smoothed = utils.recent_mean(self.sliding_window_ah, current_timestamp, 3)
+        self.open_min = smoothed if self.open_min is None else min(self.open_min, smoothed)
+        if smoothed - self.open_min >= self.config.close_ah_rise:
+            return True
+        if utils.compute_n_min_slope(sampled_sliding_window_temp, 10) >= self.config.close_temperature_slope:
+            return True
+        max_open = pd.Timedelta(self.config.max_open_minutes, "min")
+        return (max_open > pd.Timedelta(0) and self.open_since is not None and
+                current_timestamp - self.open_since >= max_open)
 
     def save_detection(self, current_timestamp, current_value, feature, slope):
         mov_mean_mean = self.movingMean_feature.current_mean
         mov_mean_std = self.movingMean_feature.current_std
-        self.open_min = current_value if self.open_min is None else min(self.open_min, current_value)
 
         self.detections.append((current_timestamp, current_value, feature, slope, mov_mean_mean, mov_mean_std))
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
@@ -274,18 +308,41 @@ class Operator(OperatorBase):
         if self.window_open == False:
             self.window_state_changed = True
         self.window_open = True
+        self.open_since = current_timestamp
+        self.open_min = utils.recent_mean(self.sliding_window_ah, current_timestamp, 3)
+        self.temperature_before_opening = (self.pending_drop["reference_temperature"] if self.pending_drop else None) or \
+            self.unusualDrops_feature.reference_temperature(self.sliding_window_temp, current_timestamp)
+        self.pending_drop = None
+        self.save_window_state()
 
     def save_closed_window(self, current_timestamp, current_value):
         if self.window_open == True:
             self.window_state_changed = True
         self.window_open = False
+        self.open_since = None
         self.open_min = None
         self.last_closing_time=current_timestamp
         self.window_closing_times.append((current_timestamp, current_value))
+        # humidity stays below its baseline for a while after airing; that is no new opening
+        self.movingMean_feature.wait_for_reset(current_timestamp, current_value)
 
         save(self.data_path, LAST_CLOSING_TIME_FILENAME, self.last_closing_time)
         save(self.data_path, WINDOW_CLOSING_FILENAME, self.window_closing_times)
+        self.save_window_state()
         logger.info(f"{current_timestamp}:  Window closed!")
+
+    def set_pending_drop(self, pending_drop):
+        self.pending_drop = pending_drop
+        self.save_window_state()
+
+    def save_window_state(self):
+        save(self.data_path, WINDOW_STATE_FILENAME, {
+            "window_open": self.window_open,
+            "open_since": self.open_since,
+            "open_min": self.open_min,
+            "temperature_before_opening": self.temperature_before_opening,
+            "pending_drop": self.pending_drop,
+        })
 
     def check_for_init_phase(self, current_timestamp):
         init_value = {
