@@ -53,24 +53,30 @@ def compute_front_end_measures(sliding_window):
     return 0, 0, 0
 
 def minute_resampling(sliding_window):
+    """The window linearly interpolated at every full minute between its first and last reading."""
     first_entry_timestamp = sliding_window[0]["timestamp"]
     last_entry_timestamp = sliding_window[-1]["timestamp"]
     if last_entry_timestamp - first_entry_timestamp > pd.Timedelta(1, "min"):
-        data_series = pd.DataFrame(sliding_window).set_index("timestamp")
-        data_series.index = data_series.index.map(lambda x: x.round("S"))
-        data_series = data_series[~data_series.index.duplicated(keep='last')]
-        resampled_data_series = data_series.resample('s').interpolate().resample('T').asfreq().dropna()
-        resampled_sliding_window = resampled_data_series.reset_index().to_dict('records')
-        return resampled_sliding_window
+        latest = {}  # a later reading with the same timestamp replaces the earlier one
+        for entry in sliding_window:
+            latest[pd.Timestamp(entry["timestamp"])] = entry["value"]
+        times = sorted(latest)
+        seconds = [(t - times[0]).total_seconds() for t in times]
+        minutes = pd.date_range(times[0].ceil("min"), times[-1].floor("min"), freq="min")
+        values = np.interp([(m - times[0]).total_seconds() for m in minutes], seconds, [latest[t] for t in times])
+        return [{"timestamp": m, "value": float(v)} for m, v in zip(minutes, values)]
     return sliding_window
 
 def compute_n_min_slope(sampled_sliding_window, n:int):
+    """Least-squares slope per minute over the readings of the last n minutes."""
     if len(sampled_sliding_window) < 2:
         return 0
-    else:
-        last_n_min_window = sampled_sliding_window[-n:] # This simple slicing makes sense here because sampled_sliding_window has a frequency of 1/min
-        slope = (last_n_min_window[-1]["value"] - last_n_min_window[0]["value"])/len(last_n_min_window)
-        return slope
+    last_timestamp = sampled_sliding_window[-1]["timestamp"]
+    recent = [entry for entry in sampled_sliding_window if last_timestamp - entry["timestamp"] < pd.Timedelta(n, "min")]
+    if len(recent) < 2:
+        return 0
+    minutes = [(entry["timestamp"] - last_timestamp).total_seconds() / 60 for entry in recent]
+    return float(np.polyfit(minutes, [entry["value"] for entry in recent], 1)[0])
 
 def is_summer(date:datetime):
     sum_start = 5
