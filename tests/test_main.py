@@ -21,7 +21,7 @@ import unittest
 from operator_lib.util import OperatorConfig, create_filter_handler
 
 from main import CustomConfig, Operator
-from tests._harness import MockKafkaProducer
+from tests._harness import MockKafkaProducer, at, new_operator
 
 OPERATOR_CONFIG = {
     "config": {},
@@ -62,6 +62,34 @@ class TestRunPath(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertFalse(results[0]["window_open"])
+
+
+class TestInvalidReadings(unittest.TestCase):
+    def setUp(self):
+        data_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(data_dir.cleanup)
+        self.operator, _ = new_operator(data_dir.name)
+        self.send({"Temperature": 21.0, "Humidity": 50.0}, 0)  # past the init phase reset
+
+    def send(self, data, minute):
+        return self.operator.run(data=data, selector=None, device_id="device:1", timestamp=at(minute))
+
+    def test_ignores_a_humidity_reading_that_is_null(self):
+        self.assertIsNone(self.send({"Humidity": None}, 1))
+
+    def test_ignores_a_humidity_reading_that_is_not_a_number(self):
+        self.assertIsNone(self.send({"Humidity": float("nan")}, 1))
+
+    def test_ignores_a_humidity_reading_outside_0_to_100_percent(self):
+        self.assertIsNone(self.send({"Humidity": 150.0}, 1))
+
+    def test_ignores_a_temperature_reading_that_is_not_a_number(self):
+        self.assertIsNone(self.send({"Temperature": "warm"}, 1))
+
+    def test_keeps_reporting_after_an_invalid_reading(self):
+        self.send({"Humidity": None}, 1)
+
+        self.assertFalse(self.send({"Humidity": 50.0}, 2)["window_open"])
 
 
 if __name__ == "__main__":

@@ -1,7 +1,19 @@
 from datetime import datetime
+import math
 
 import pandas as pd
 import numpy as np
+
+
+def parse_reading(raw, low, high):
+    """The reading as float, or None if it is missing, not a number or outside [low, high]."""
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value) or not low <= value <= high:
+        return None
+    return value
 
 
 def todatetime(timestamp):

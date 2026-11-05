@@ -51,6 +51,9 @@ SLIDING_WINDOW_TEMP_FILENAME = "sliding_window_temp.pickle"
 
 LAST_TEMP_DROP_TIME_FILE = "last_temp_drop_time.pickle"
 
+# readings outside these ranges are sensor faults, not room climate
+READING_RANGES = {"Temperature": (-40.0, 85.0), "Humidity": (0.0, 100.0)}
+
 from operator_lib.util import Config
 class CustomConfig(Config):
     data_path = "/opt/data"
@@ -131,6 +134,10 @@ class Operator(OperatorBase):
         self.unusualDrops_feature.stop()
 
     def run(self, data: typing.Dict[str, typing.Any], selector: str, device_id, timestamp: datetime.datetime):
+        data = self.drop_invalid_readings(data)
+        if not data:
+            return None
+
         if "Temperature" in data.keys():
             current_temp_timestamp = pd.Timestamp(timestamp)
             current_temp_value = float(data['Temperature'])
@@ -213,6 +220,17 @@ class Operator(OperatorBase):
         
         if outcome: return outcome  # init phase cuts of normal analysis, this line is only reached if operator is in init phase and only a temperature value was sent
 
+
+    def drop_invalid_readings(self, data):
+        readings = {}
+        for key, (low, high) in READING_RANGES.items():
+            if key in data:
+                value = utils.parse_reading(data[key], low, high)
+                if value is None:
+                    logger.warning(f"ignoring {key} reading {data[key]!r}: not a number between {low} and {high}")
+                else:
+                    readings[key] = value
+        return readings
 
     def detect(self, current_value, current_timestamp, sampled_sliding_window, selector) -> (bool, str):
         if selector == "humidity":
