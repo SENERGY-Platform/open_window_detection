@@ -297,6 +297,7 @@ class Operator(OperatorBase):
             "initial_phase": "",
             "notification": utils.notify(self.notification_mode, self.window_open, self.window_state_changed)
         }
+        self.window_state_changed = False  # the change is reported with this answer
         logger.debug(answer)
         return answer
 

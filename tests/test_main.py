@@ -21,7 +21,8 @@ import unittest
 from operator_lib.util import OperatorConfig, create_filter_handler
 
 from main import CustomConfig, Operator
-from tests._harness import MockKafkaProducer, at, new_operator
+from tests._harness import MockKafkaProducer, at, feed, new_operator, transitions
+from tests._room import Room
 
 OPERATOR_CONFIG = {
     "config": {},
@@ -100,6 +101,19 @@ class TestInitPhase(unittest.TestCase):
         _, producer = new_operator(data_dir.name, init_phase_length="2", init_phase_level="d")
 
         self.assertNotIn("NaT", producer.messages[0]["analytics"]["initial_phase"])
+
+
+class TestNotification(unittest.TestCase):
+    def test_notifies_once_per_change_of_the_window_state(self):
+        data_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(data_dir.cleanup)
+        operator, _ = new_operator(data_dir.name, notification_mode="always")
+
+        outputs = feed(operator, Room(0, 80).readings(240, openings=[(120, 10)]))
+
+        changes = transitions(outputs)
+        self.assertTrue(changes, "the scenario must open the window at least once")
+        self.assertEqual(len([o for _, o in outputs if o.get("notification")]), len(changes))
 
 
 if __name__ == "__main__":
