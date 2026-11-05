@@ -106,3 +106,12 @@ All optional; see `algo/moving_mean_feature.py` for their meaning.
 
 The defaults come from a simple room model, not from field data with known window states; calibrate them on real
 data before relying on them.
+
+## Development
+
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; change them with `uv add` or `uv lock`.
+
+```bash
+uv sync
+uv run python -m unittest discover -s tests -t .
+```

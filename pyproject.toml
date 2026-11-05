@@ -1,0 +1,16 @@
+[project]
+name = "open-window-detection"
+# released versions come from the git tags, see .github/scripts/next-version.sh
+version = "0.0.0"
+# 3.13 has no wheels of confluent-kafka 2.4.0, which the operator lib pins
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy>=2,<3",
+  "operator-lib @ git+https://github.com/SENERGY-Platform/analytics-operator-lib-python.git@v1.14.0",
+  # pandas 3 changes copy and string defaults the operator lib and ray are not tested with
+  "pandas>=2,<3",
+  "python-dotenv==1.0.0",
+]
+
+[tool.uv]
+package = false
