@@ -4,6 +4,15 @@ import pandas as pd
 import numpy as np
 
 
+# the detection logs are pickled whole on every entry, so they keep only their newest entries
+LOG_LIMIT = 1000
+
+
+def append_capped(log, entry):
+    log.append(entry)
+    del log[:-LOG_LIMIT]
+
+
 def parse_reading(raw, low, high):
     """The reading as float, or None if it is missing, not a number or outside [low, high]."""
     try:

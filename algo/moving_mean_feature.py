@@ -155,7 +155,7 @@ class MovingMeanFeature:
         if self._current_mean and self.__is_outlier(current_value):
             slope = utils.compute_n_min_slope(sampled_sliding_window, self._slope_min)
             if slope<=0 and not self._waiting_for_reset:                        # reset functionality on false Positives
-                self._detections.append((current_ts, current_value, self._current_mean, self._current_std, slope))
+                utils.append_capped(self._detections, (current_ts, current_value, self._current_mean, self._current_std, slope))
                 save(self._data_path, self._detections_file, self._detections)
                 self.activate_pending_positive(current_ts, current_value)
                 # print(current_ts, current_value, slope, self._current_mean, self._current_std, self._pending_positive)
@@ -166,7 +166,7 @@ class MovingMeanFeature:
     def activate_pending_positive(self, current_ts, current_value):
         if not self._pending_positive:
             self._pending_positive = True
-            self._pending_positive_counts.append(
+            utils.append_capped(self._pending_positive_counts,
                 (current_ts, current_value, self._current_mean, self._current_std, True))
             save(self._data_path, self._pending_positive_file, self._pending_positive_counts)
 
@@ -239,8 +239,8 @@ class MovingMeanFeature:
             self._waiting_for_reset = True
             self._pending_positive = False
 
-            self._waiting_for_reset_counts.append((current_ts, current_value, self._current_mean, self._current_std, True))
-            self._pending_positive_counts.append((current_ts, current_value, self._current_mean, self._current_std, False))
+            utils.append_capped(self._waiting_for_reset_counts, (current_ts, current_value, self._current_mean, self._current_std, True))
+            utils.append_capped(self._pending_positive_counts, (current_ts, current_value, self._current_mean, self._current_std, False))
 
             save(self._data_path, self._pending_positive_file, self._pending_positive_counts)
             save(self._data_path, self._waiting_for_reset_file, self._waiting_for_reset_counts)
@@ -253,7 +253,7 @@ class MovingMeanFeature:
             higher_thresh = self._current_mean + ratio * self._current_std
             if (lower_thresh) < current_value < (higher_thresh) and self._waiting_for_reset:
                 self._waiting_for_reset = False
-                self._waiting_for_reset_counts.append(
+                utils.append_capped(self._waiting_for_reset_counts,
                     (current_ts, current_value, self._current_mean, self._current_std, False))
                 save(self._data_path, self._waiting_for_reset_file, self._waiting_for_reset_counts)
 
@@ -263,7 +263,7 @@ class MovingMeanFeature:
         if self._current_mean and not self._waiting_for_reset:
             self._waiting_for_reset = True
             self._pending_positive = False
-            self._waiting_for_reset_counts.append((current_ts, current_value, self._current_mean, self._current_std, True))
+            utils.append_capped(self._waiting_for_reset_counts, (current_ts, current_value, self._current_mean, self._current_std, True))
             save(self._data_path, self._waiting_for_reset_file, self._waiting_for_reset_counts)
 
     def __is_outlier(self, value) -> bool:  # change to median
@@ -337,6 +337,6 @@ class MovingMeanFeature:
             return True
         else:
             #logger.info(f'{self._current_period_start} - point count for {self._hours_per_period}hour period:', period_point_count, 'DISMISSED', mean, std, tstd, min_count_per_period)
-            self._dismissed_point_counts.append(
+            utils.append_capped(self._dismissed_point_counts,
                 (self._current_period_start, period_point_count, mean, std, self._period_vals_last_n_days['point_count']))
             return False

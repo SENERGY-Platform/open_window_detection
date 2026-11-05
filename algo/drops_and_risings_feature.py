@@ -50,7 +50,7 @@ class DropsAndRisingsFeature:
         """Whether absolute humidity drops unusually; only the temperature makes an open window of it."""
         if (self.is_falling_unusually(sliding_window, sampled_sliding_window) and
             (self.is_falling_last10min(sampled_sliding_window) or self.is_falling_extreme_last2min(sliding_window))):
-                self._detections.append((current_ts, current_value))
+                utils.append_capped(self._detections, (current_ts, current_value))
                 save(self._data_path, self._detections_file, self._detections)
                 return True
         return False
@@ -90,7 +90,7 @@ class DropsAndRisingsFeature:
                                               for entry in sampled_sliding_window if entry["timestamp"] >= last_closing_time]
             if (len(time_window_since_last_closing) > 0 and
                     np.mean(time_window_since_last_closing) >= self._config.rebound_humidity and self.humidity_rebound_detected == False):
-                self._humidity_rebound_counts.append(current_timestamp)
+                utils.append_capped(self._humidity_rebound_counts, current_timestamp)
                 save(self.data_path, self._humidity_rebounds_file, self._humidity_rebound_counts)
                 logger.info(f"{current_timestamp}:  Humidity too fast too high after closing the window!")
                 self._humidity_rebound_detected = True

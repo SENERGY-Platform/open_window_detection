@@ -58,5 +58,15 @@ class TestMinuteResampling(unittest.TestCase):
         self.assertEqual([e["value"] for e in grid], [12.0, 12.0, 12.0])
 
 
+class TestLogs(unittest.TestCase):
+    def test_a_log_keeps_only_its_newest_entries(self):
+        log = []
+
+        for i in range(utils.LOG_LIMIT + 5):
+            utils.append_capped(log, i)
+
+        self.assertEqual(log, list(range(5, utils.LOG_LIMIT + 5)))
+
+
 if __name__ == "__main__":
     unittest.main()

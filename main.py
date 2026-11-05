@@ -302,7 +302,7 @@ class Operator(OperatorBase):
         mov_mean_mean = self.movingMean_feature.current_mean
         mov_mean_std = self.movingMean_feature.current_std
 
-        self.detections.append((current_timestamp, current_value, feature, slope, mov_mean_mean, mov_mean_std))
+        utils.append_capped(self.detections, (current_timestamp, current_value, feature, slope, mov_mean_mean, mov_mean_std))
         save(self.data_path, ALL_DETECTIONS_FILENAME, self.detections)
         logger.info(f"{current_timestamp}:  Detected an open window!")
         if self.window_open == False:
@@ -322,7 +322,7 @@ class Operator(OperatorBase):
         self.open_since = None
         self.open_min = None
         self.last_closing_time=current_timestamp
-        self.window_closing_times.append((current_timestamp, current_value))
+        utils.append_capped(self.window_closing_times, (current_timestamp, current_value))
         # humidity stays below its baseline for a while after airing; that is no new opening
         self.movingMean_feature.wait_for_reset(current_timestamp, current_value)
 
