@@ -92,5 +92,15 @@ class TestInvalidReadings(unittest.TestCase):
         self.assertFalse(self.send({"Humidity": 50.0}, 2)["window_open"])
 
 
+class TestInitPhase(unittest.TestCase):
+    def test_first_init_message_of_a_fresh_deployment_names_a_real_end_time(self):
+        data_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(data_dir.cleanup)
+
+        _, producer = new_operator(data_dir.name, init_phase_length="2", init_phase_level="d")
+
+        self.assertNotIn("NaT", producer.messages[0]["analytics"]["initial_phase"])
+
+
 if __name__ == "__main__":
     unittest.main()

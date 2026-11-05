@@ -110,10 +110,13 @@ class Operator(OperatorBase):
         self.detections = load(self.data_path, ALL_DETECTIONS_FILENAME, [])
 
         self.init_phase_duration = pd.Timedelta(self.config.init_phase_length, self.config.init_phase_level)        
-        self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time, self.produce)
+        now = pd.Timestamp.now(tz="UTC")
+        # before the first reading the end of the init phase can only be estimated from now;
+        # run() replaces the handler once the first reading arrives
+        self.init_phase_handler = InitPhase(self.data_path, self.init_phase_duration, self.first_data_time or now, self.produce)
         value = {
             "window_open": False,
-            "timestamp": timestamp_to_str(pd.Timestamp.now())
+            "timestamp": timestamp_to_str(now)
         }
         self.init_phase_handler.send_first_init_msg(value)    
 
