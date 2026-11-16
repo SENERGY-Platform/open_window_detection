@@ -22,6 +22,37 @@ temperature:
 
 Every reading is evaluated at the time Kafka stored the message.
 
+### How large a drop has to be
+
+How far absolute humidity has to fall to count is measured in the room's own terms, not as one number for every
+room. Over the same span the drop itself is measured across — the minutes between the two halves of the operator's
+hour, about half an hour — it estimates how far this room's level moves by itself: the readings are put on a
+one-minute grid with every reading held until the next one, and the scale is the median change in magnitude between
+two grid points that far apart, as the standard deviation it stands for. A drop has to exceed `ah_drop_std_factor`
+times that scale, and `ah_drop_min` on top of that as an absolute floor.
+
+So a quiet room reports a smaller drop as unusual than a restless one does, with the same configuration, and
+`ah_drop_std_factor` is the one threshold that is meant to carry over between rooms. Two properties of the estimate
+matter for reading it:
+
+- **Both sides of the comparison span the same time**, so nothing converts between spans. Nothing can: an earlier
+  version divided each change between two readings by the square root of its own gap, and two real rooms refuted it.
+  A sensor that reports on change breaks that assumption twice. It publishes its whole state on every attribute
+  change, so one event arrives as several readings within the same second, which no length of time separates — on a
+  Bosch BTH-RM230Z those were two thirds of all readings. And a long gap between readings means the room held still
+  rather than that it had longer to move: measured over nine days, the changes grew with the gap to the power 0.23
+  on one room and −0.02 on the other, where a random walk gives 0.50.
+- **The level is held, not interpolated.** A reading holds until the next one, which is what a sensor reporting on
+  change means. An interpolated quiet half hour is a straight line of small changes and an interpolated jump is a
+  gentle slope; both are movement the room did not make.
+
+A window shorter than twice the span, or with fewer than ten changes on the grid, falls back to a floor of
+0.05 g/m³, and the detection then rests on `ah_drop_min` alone. The operator holds one hour, which is about two
+spans, so its own estimate is coarse: measured over ten hours of a drifting series, the growth between two spans
+comes out anywhere between 1.6 and 3.0 where it should be 2.0, and it takes two days to settle within a tenth. A
+scale worth trusting comes from weeks of history, which is what `tools/calibrate.py` measures — see **Calibration**.
+The defaults have not been calibrated against field data.
+
 ## Start from history
 
 A fresh deployment, or the first start of this version, has nothing to continue from. It then reads the history of its
@@ -79,8 +110,8 @@ All optional; humidity values are absolute humidity in g/m³, temperatures in K.
 |-----------------------------------|---------|-----------------------------------------------------------------------------------|
 | `max_temperature_age_minutes`     | 90      | Older temperature readings count as missing; 90 covers sensors reporting hourly    |
 | `max_humidity_age_minutes`        | 90      | Older humidity readings count as missing                                           |
-| `ah_drop_min`                     | 0.4     | Drop of the last 5 minutes below the median of the hour before                    |
-| `ah_drop_std_factor`              | 1       | The same drop in units of the hour's noise around its trend                        |
+| `ah_drop_min`                     | 0.4     | Smallest drop of the last 5 minutes below the median of the hour before that counts at all |
+| `ah_drop_std_factor`              | 1       | The same drop in units of how far the room's level moves by itself over that span  |
 | `ah_falling_slope`                | 0.02    | Fall per minute over the last 10 minutes, or ...                                   |
 | `ah_extreme_drop`                 | 0.9     | ... fall between two consecutive readings, that the drop needs as well             |
 | `temperature_confirm_drop`        | 0.3     | Temperature fall below its level from 5 to 15 minutes before the humidity drop ... |
@@ -110,6 +141,33 @@ All optional; see `algo/moving_mean_feature.py` for their meaning.
 
 The defaults come from a simple room model, not from field data with known window states; calibrate them on real
 data before relying on them.
+
+## Calibration
+
+`tools/calibrate.py` is a development tool, not part of the image. It reads a CSV of one room's history
+(`time,Temperature,Humidity`) and prints three reports:
+
+1. **How far the room's level moves by itself, over the spans a drop is measured across.** The scale
+   `ah_drop_std_factor` multiplies, measured over the whole history and, beside it, over one hour at a time, which is
+   all a deployed operator holds. Where the two differ, the operator is judging a drop against a scale its own window
+   was too short to see.
+1b. **The same between two messages, per gap length.** A diagnostic rather than what the operator decides on: it is
+   where normalising a change by the square root of its own gap was refuted, and it is where that shows up again for
+   a new sensor.
+2. **Airings found by looking forward.** Deep, sustained drops of absolute humidity that recover afterwards,
+   accompanied by a temperature fall. Looking forward is what a deployed operator cannot do, which is why these are
+   usable as labels without a window contact. The thresholds are deliberately strict: a missed airing costs report 3
+   one label, a wrong one costs it its meaning.
+3. **A sweep over `ah_drop_std_factor`.** Per value, how many of those airings are caught and after how long, and how
+   often the detection fires outside them. The sweep runs the operator's own code, not a copy of it.
+
+Two things the reports cannot tell you. The airings of report 2 inherit their own blind spots — an airing in mild,
+humid weather leaves no humidity signature for them to find either — so the sweep is calibrated on the winter case.
+And a tilted window is barely represented in them at all.
+
+```bash
+uv run python -m tools.calibrate history.csv
+```
 
 ## Development
 

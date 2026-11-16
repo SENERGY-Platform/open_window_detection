@@ -5,8 +5,8 @@ import os
 import pandas as pd
 import numpy as np
 
-# below this the front window's spread is sensor resolution, not noise
-AH_NOISE_FLOOR = 0.05  # g/m³
+# below this the window's level changes are the sensor's resolution rather than the room's own movement
+AH_CHANGE_FLOOR = 0.05  # g/m³ over the span measured
 
 
 class DropsAndRisingsFeature:
@@ -101,12 +101,19 @@ class DropsAndRisingsFeature:
         return self._humidity_rebound_detected
 
     def is_falling_unusually(self, sliding_window, sampled_sliding_window) -> bool:
-        front_level, front_noise, end_mean = utils.compute_front_end_measures(sampled_sliding_window, AH_NOISE_FLOOR)
+        front_level, end_mean, lag_minutes = utils.compute_front_end_measures(sampled_sliding_window)
         if front_level is None:
             return False
         drop = front_level - end_mean
-        return (drop > self._config.ah_drop_std_factor * front_noise and drop >= self._config.ah_drop_min and
+        return (drop > self.unusual_drop(sliding_window, lag_minutes) and drop >= self._config.ah_drop_min and
                 len(sliding_window) >= 2 and sliding_window[-1]["value"] < sliding_window[-2]["value"])
+
+    def unusual_drop(self, sliding_window, lag_minutes) -> float:
+        """The drop of absolute humidity that counts as unusual over lag_minutes: config.ah_drop_std_factor times
+        how far this room's level moves over that long by itself. A restless room therefore needs a larger drop
+        than a quiet one, in the same configuration. The scale is measured over lag_minutes itself, so the two
+        sides of the comparison are the same kind of number and nothing converts between spans."""
+        return self._config.ah_drop_std_factor * utils.level_change_scale(sliding_window, lag_minutes, AH_CHANGE_FLOOR)
 
     def is_falling_last10min(self, sampled_sliding_window) -> bool:
         return utils.compute_n_min_slope(sampled_sliding_window, 10) < -self._config.ah_falling_slope
