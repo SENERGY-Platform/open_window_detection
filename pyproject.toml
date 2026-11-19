@@ -9,7 +9,7 @@ dependencies = [
   "operator-lib @ git+https://github.com/SENERGY-Platform/analytics-operator-lib-python.git@v1.14.0",
   # pandas 3 changes copy and string defaults the operator lib and ray are not tested with
   "pandas>=2,<3",
-  "python-dotenv==1.0.0",
+  "python-dotenv==1.2.2",
 ]
 
 [tool.uv]
